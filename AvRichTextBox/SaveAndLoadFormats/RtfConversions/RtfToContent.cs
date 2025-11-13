@@ -3,7 +3,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using static AvRichTextBox.HelperMethods;
-using RtfDomParserAv;
+using RtfDomParser;
 using System.Collections.Generic;
 using Avalonia.Controls.Documents;
 using DynamicData;
@@ -91,8 +91,8 @@ internal static partial class RtfConversions
 
             
             
-            newpar.Background = new SolidColorBrush(rtfpar.Format.BackColor);
-            newpar.BorderBrush = new SolidColorBrush(rtfpar.Format.BorderColor);
+            //newpar.Background = new SolidColorBrush(rtfpar.Format.BackColor);
+            //newpar.BorderBrush = new SolidColorBrush(rtfpar.Format.BorderColor);
             newpar.BorderThickness = new Avalonia.Thickness(TwipToPix(rtfpar.Format.BorderWidth));
 
             newpar.FontFamily = new FontFamily(rtfpar.Format.FontName);
@@ -224,8 +224,8 @@ internal static partial class RtfConversions
                erun.FontSize /= 1.5;
             }
 
-            erun.Foreground = new SolidColorBrush(rtftext2.Format.TextColor);
-            erun.Background = new SolidColorBrush(rtftext2.Format.BackColor);
+            //erun.Foreground = new SolidColorBrush(rtftext2.Format.TextColor);
+            //erun.Background = new SolidColorBrush(rtftext2.Format.BackColor);
             erun.FontFamily = new FontFamily(rtftext2.Format.FontName);
             //erun.FontFamily = new FontFamily("Meiryo");
             //Debug.WriteLine("erun: " + erun.FontFamily + "  (" + erun.Text + ")");

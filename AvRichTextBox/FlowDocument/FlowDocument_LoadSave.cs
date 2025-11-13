@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 using static AvRichTextBox.WordConversions;
 using static AvRichTextBox.RtfConversions;
 using static AvRichTextBox.XamlConversions;
-using RtfDomParserAv;
+using RtfDomParser;
 using System.Text;
 using HtmlAgilityPack;
 

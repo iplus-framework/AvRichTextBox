@@ -4,7 +4,6 @@
 	  <TargetFramework>net8.0</TargetFramework>
 	  <Nullable>enable</Nullable>
 	  <LangVersion>latest</LangVersion>
-
 	  <!--Nuget-->
 	  <Authors>Simplectoplasm</Authors>
 	  <Company>---</Company>
@@ -25,6 +24,7 @@
       <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
 	  <PackageOutputPath>D:\PROG\LocalNuget\AvRichTextBox</PackageOutputPath>
 	  <AssemblyVersion>1.2.5</AssemblyVersion>
+    <!--<AvaloniaUseCompiledBindingsByDefault Condition="'$(UseAvaloniaFork)' == 'True'">false</AvaloniaUseCompiledBindingsByDefault>-->
   </PropertyGroup>
 
 
@@ -59,26 +59,32 @@
     <AvaloniaResource Include="SaveAndLoadFormats\Xaml\XamlPackageData\[Content_Types].xml" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.8" />
-    <PackageReference Include="Avalonia.Controls.ItemsRepeater" Version="11.1.5" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.8" />
-    <PackageReference Include="Avalonia.Skia" Version="11.2.8" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.8" />
-    <PackageReference Include="Avalonia.ReactiveUI" Version="11.2.8" />
-    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-    <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.2.8" />
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.2.0" />
-    <PackageReference Include="HtmlAgilityPack" Version="1.12.0" />
-  </ItemGroup>
+  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="..\AvaloniaInclude.props" />
+  <!--<Import Condition="'$(UseAvaloniaFork)' == 'true'" Project="$(AvaloniaRootDir)\build\ReferenceCoreLibraries.props"/>-->
+  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(AvaloniaRootDir)\build\BuildTargets.targets"/>
+  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(AvaloniaRootDir)\build\SourceGenerators.props" />
+  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(AvaloniaRootDir)\build\ReactiveUI.props" />
 
+  <ItemGroup Condition="'$(UseAvaloniaFork)' == 'False'">
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Skia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="$(AvaloniaVersion)" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="$(AvaloniaVersion)" />
+  </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+    <PackageReference Include="RtfDomParser" Version="7.0.0" />
+  </ItemGroup>
+  
+  <!--<ItemGroup>
     <Reference Include="RtfDomParserAv">
       <HintPath>RtfDomParserAv.dll</HintPath>
     </Reference>
-  </ItemGroup>
-
-
+  </ItemGroup>-->
 	
 	<ItemGroup>
     <Compile Update="FlowDocument\FlowDocument_RangeXaml.cs">

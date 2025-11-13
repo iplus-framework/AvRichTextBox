@@ -4,7 +4,7 @@ using DocumentFormat.OpenXml.VariantTypes;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using RtfDomParserAv;
+using RtfDomParser;
 using System.Linq;
 using System.Threading.Tasks;
 using static AvRichTextBox.FlowDocument;
