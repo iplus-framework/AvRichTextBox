@@ -9,9 +9,9 @@
     <!--<AvaloniaUseCompiledBindingsByDefault Condition="'$(UseAvaloniaFork)' == 'True'">false</AvaloniaUseCompiledBindingsByDefault>-->
   </PropertyGroup>
 
-	<PropertyGroup Label="Avalonia">
+	<!--<PropertyGroup Label="Avalonia">
     <AvaloniaUseCompiledBindingsByDefault>True</AvaloniaUseCompiledBindingsByDefault>
-  </PropertyGroup>
+  </PropertyGroup>-->
 
   <ItemGroup>
     <Folder Include="Models\" />
@@ -64,15 +64,25 @@
   </ItemGroup>
 
   <!-- iPlus settings and overrides -->
+  <ItemGroup Condition="'$(UseAvaloniaFork)' == 'true'">
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.Skottie" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+    <!--<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />-->
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" />
+    <!--<PackageReference Include="SkiaSharp.NativeAssets.macOS" />-->
+    <!--<PackageReference Include="SkiaSharp.NativeAssets.Android" />-->
+    <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" />
+    <PackageReference Include="HarfBuzzSharp" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Win32" />
+    <!--<PackageReference Include="HarfBuzzSharp.NativeAssets.macOS" />-->
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.WebAssembly" />
+  </ItemGroup>
   <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="../../iPlus/build/AvaloniaInclude.props" />
-  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(AvaloniaRootDir)/build/BuildTargets.targets" />
-  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(AvaloniaRootDir)/build/SourceGenerators.props" />
-  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(MSBuildThisFileDirectory)../../iPlus/build/AvaloniaBaseReactiveInclude.props" />
+  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="../../iPlus/build/AvaloniaBaseReactiveInclude.props" />
   <!-- End iPlus settings and overrides -->
   
-  <!-- Import fork assemblies when using Avalonia fork -->
-  <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="..\AvaloniaInclude.props" />
-
   <ItemGroup>
     <ProjectReference Include="..\AvRichTextBox\AvRichTextBox.csproj" />
   </ItemGroup>
