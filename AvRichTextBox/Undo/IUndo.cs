@@ -9,14 +9,16 @@ public interface IUndo
 
 internal class IEditablePropertyAssociation
 {
-   internal IEditable InlineItem { get; set; }
+   internal int InlineId { get; set; }
+   internal int BlockId { get; set; }
    internal object PropertyValue { get; set; }
-   internal FlowDocument.FormatRun? FormatRun { get; set; }  
+   internal FlowDocument.FormatRunAction? FormatRun { get; set; }  
 
-   internal IEditablePropertyAssociation(IEditable inlineItem, FlowDocument.FormatRun formatRun, object propertyValue)
+   internal IEditablePropertyAssociation(int blockId, int inlineId, FlowDocument.FormatRunAction formatRunAction, object propertyValue)
    {
-      InlineItem = inlineItem;
-      FormatRun = formatRun;
+      BlockId = blockId;
+      InlineId = inlineId;
+      FormatRun = formatRunAction;
       PropertyValue = propertyValue;
    }
 }

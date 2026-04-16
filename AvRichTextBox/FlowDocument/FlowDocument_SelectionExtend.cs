@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 
 namespace AvRichTextBox;
 
@@ -17,23 +15,23 @@ public partial class FlowDocument
 
             SelectionExtendMode = ExtendMode.ExtendModeRight;
 
-            if (Selection.EndParagraph == Blocks[^1] && Selection.EndParagraph.SelectionEndInBlock == Selection.EndParagraph.Text.Length)
+            if (Selection.EndParagraph == AllParagraphs.ToList()[^1] && Selection.EndParagraph.SelectionEndInBlock == Selection.EndParagraph.TextLength)
                return;  // End of document
 
-            Selection!.End += 1;
+            Selection.End += 1;
 
             break;
 
          case ExtendMode.ExtendModeLeft:
 
-            Selection!.Start += 1;
+            Selection.Start += 1;
             if (Selection.Start == Selection.End)
                SelectionExtendMode = ExtendMode.ExtendModeRight;
 
             break;
       }
 
-      ScrollInDirection!(1);
+      ScrollInDirection?.Invoke(1);
 
    }
 
@@ -45,34 +43,37 @@ public partial class FlowDocument
       {
          case ExtendMode.ExtendModeNone:
          case ExtendMode.ExtendModeLeft:
-            if (Selection!.Start == 0) return;
+            if (Selection.Start == 0) return;
             Selection.Start -= 1;
             SelectionExtendMode = ExtendMode.ExtendModeLeft;
             break;
 
          case ExtendMode.ExtendModeRight:
-            if (Selection!.End == 0) return;
-            Selection!.End -= 1;
+            if (Selection.End == 0) return;
+            Selection.End -= 1;
             if (Selection.Start == Selection.End)
                SelectionExtendMode = ExtendMode.ExtendModeLeft;
             break;
       }
 
-      ScrollInDirection!(-1);
+      ScrollInDirection?.Invoke(-1);
    }
 
    internal void ExtendSelectionDown()
    {
       Selection.BiasForwardEnd = true;
 
+      List<Paragraph> allPars = AllParagraphs;
+
       switch (SelectionExtendMode)
       {
+
          case ExtendMode.ExtendModeNone:
-         case ExtendMode.ExtendModeRight:
+         case ExtendMode.ExtendModeRight:  // Hitting down key increases selection range from bottom
 
             SelectionExtendMode = ExtendMode.ExtendModeRight;
 
-            if (Selection!.EndParagraph == Blocks[^1] && Selection.End == Text.Length)
+            if (Selection.EndParagraph == allPars[^1] && Selection.End == Text.Length)
                return;  // last line of document
             
             Paragraph origEndPar = Selection.EndParagraph;
@@ -81,11 +82,10 @@ public partial class FlowDocument
    
             if (Selection.EndParagraph.IsEndAtLastLine)
             {
-               if (Selection.EndParagraph != Blocks[^1])
+               if (Selection.EndParagraph != allPars[^1])
                {
                   int nextParIndex = Blocks.IndexOf(Selection.EndParagraph) + 1;
-                  Paragraph nextPar = (Paragraph)Blocks[nextParIndex];
-                  int oldSE = Selection.End;
+                  Paragraph nextPar = (Paragraph)allPars[nextParIndex];
                   Selection.End = Math.Min(nextPar.StartInDoc + nextPar.BlockLength - 1, nextEnd);
                }
             }
@@ -96,29 +96,29 @@ public partial class FlowDocument
             //for selection continuity
             if (Selection.EndParagraph != origEndPar)
             {
-               origEndPar.SelectionEndInBlock = origEndPar.Text.Length;
+               origEndPar.SelectionEndInBlock = origEndPar.TextLength;
                Selection.EndParagraph.SelectionStartInBlock = 0;
             }
 
             break;
 
-         case ExtendMode.ExtendModeLeft:
+         case ExtendMode.ExtendModeLeft:  // Hitting down key reduces selection range from top 
 
-            if (Selection!.StartParagraph == Blocks[^1] && Selection.StartParagraph.IsStartAtLastLine)
+            if (Selection.StartParagraph == allPars[^1] && Selection.StartParagraph.IsStartAtLastLine)
                return;  // last line of document
 
             int newStart = Selection.StartParagraph.StartInDoc + Selection.StartParagraph.CharNextLineStart;
 
-            if (Blocks.IndexOf(Selection!.StartParagraph) < Blocks.Count - 1)
+            if (AllParagraphs.IndexOf(Selection.StartParagraph) < AllParagraphs.Count - 1)
             {
-               Block nextBlock = Blocks[Blocks.IndexOf(Selection.StartParagraph) + 1];
+               Paragraph nextPar = allPars[allPars.IndexOf(Selection.StartParagraph) + 1];
                int charsFromStart = Selection.StartParagraph.SelectionStartInBlock - Selection.StartParagraph.FirstIndexLastLine;
                if (Selection.StartParagraph.IsStartAtLastLine)
                {
-                  newStart = nextBlock.StartInDoc + charsFromStart;
+                  charsFromStart = Math.Min(charsFromStart, nextPar.TextLength);
+                  newStart = nextPar.StartInDoc + charsFromStart;
                   Selection.StartParagraph.CollapseToStart();
                }
-                  
             }
 
             if (newStart > Selection.End)
@@ -129,12 +129,12 @@ public partial class FlowDocument
                SelectionExtendMode = ExtendMode.ExtendModeRight;
             }
             else
-               Selection!.Start = newStart;
+               Selection.Start = newStart;
 
             break;
       }
 
-      ScrollInDirection!(1);
+      ScrollInDirection?.Invoke(1);
       
    }
 
@@ -143,18 +143,20 @@ public partial class FlowDocument
       Paragraph? prevPar = null;
       Selection.BiasForwardEnd = false;
 
+      List<Paragraph> allPars = AllParagraphs;
+
       switch (SelectionExtendMode)
       {
          case ExtendMode.ExtendModeNone:
          case ExtendMode.ExtendModeLeft:
 
-            if (Selection!.StartParagraph == Blocks[0] && Selection.StartParagraph.IsStartAtFirstLine)
+            if (Selection.StartParagraph == allPars[0] && Selection.StartParagraph.IsStartAtFirstLine)
                return;  // first line of document
 
             Paragraph origStartPar = Selection.StartParagraph;
             if (Selection.StartParagraph.IsStartAtFirstLine)
             {
-               prevPar = (Paragraph)Blocks[Blocks.IndexOf(Selection.StartParagraph) - 1];
+               prevPar = allPars[allPars.IndexOf(Selection.StartParagraph) - 1];
                Selection.Start = Math.Min(prevPar.StartInDoc + prevPar.BlockLength - 2, prevPar.StartInDoc + prevPar.FirstIndexLastLine + Selection.StartParagraph.CharPrevLineStart);
             }
             else
@@ -165,22 +167,23 @@ public partial class FlowDocument
             if (Selection.StartParagraph != origStartPar)
             {
                origStartPar.SelectionStartInBlock = 0;
-               Selection.StartParagraph.SelectionEndInBlock = Selection.StartParagraph.Text.Length;
+               Selection.StartParagraph.SelectionEndInBlock = Selection.StartParagraph.TextLength;
             }
 
             break;
 
 
-         case ExtendMode.ExtendModeRight:
+         case ExtendMode.ExtendModeRight: // Hitting up key reduces selection range from bottom 
 
             int newEnd = Selection.EndParagraph.StartInDoc + Selection.EndParagraph.CharPrevLineEnd;
 
-            if (Blocks.IndexOf(Selection!.EndParagraph) > 0)
+            if (AllParagraphs.IndexOf(Selection.EndParagraph) > 0)
             {
-               prevPar = (Paragraph)Blocks[Blocks.IndexOf(Selection.EndParagraph) - 1];
+               prevPar = allPars[allPars.IndexOf(Selection.EndParagraph) - 1];
                int charsFromStart = Selection.EndParagraph.SelectionEndInBlock;
                if (Selection.EndParagraph.IsEndAtFirstLine)
                {
+                  charsFromStart = Math.Min(charsFromStart, prevPar.TextLength);
                   newEnd = prevPar.StartInDoc + prevPar.FirstIndexLastLine + charsFromStart;
                   Selection.EndParagraph.CollapseToStart();
                }
@@ -195,12 +198,12 @@ public partial class FlowDocument
                SelectionExtendMode = ExtendMode.ExtendModeLeft;
             }
             else
-               Selection!.End = newEnd;
+               Selection.End = newEnd;
 
             break;
       }
 
-      ScrollInDirection!(-1);
+      ScrollInDirection?.Invoke(-1);
       
 
    }
@@ -208,28 +211,41 @@ public partial class FlowDocument
    internal void EnsureSelectionContinuity()
    {
 
-      foreach (Paragraph p in Blocks.Where(p => !SelectionParagraphs.Contains(p)))
+      List<Paragraph> allPars = AllParagraphs;
+
+      foreach (Paragraph p in allPars.Where(p => !SelectionParagraphs.Contains(p)))
           p.ClearSelection(); 
 
       if (SelectionParagraphs.Count > 1)
       {
-         SelectionParagraphs[0].SelectionEndInBlock = SelectionParagraphs[0].BlockLength;
-
-         for (int i = Blocks.IndexOf(SelectionParagraphs[0]) + 1; i < Blocks.IndexOf(SelectionParagraphs[^1]); i++)
+         for (int i = 0; i < SelectionParagraphs.Count; i++)
          {
-            Blocks[i].SelectionStartInBlock = 0;
-            Blocks[i].SelectionEndInBlock = Blocks[i].BlockLength;
-         }
+            Paragraph selPar = SelectionParagraphs[i];
+            switch (i)
+            {
+               case 0:
+                  //ensure first par selected to end
+                  selPar.SelectionEndInBlock = selPar.BlockLength;
+                  break;
 
-         SelectionParagraphs[^1].SelectionStartInBlock = 0;
+               case int last when last == SelectionParagraphs.Count - 1:
+                  //ensure last par selected from start
+                  selPar.SelectionStartInBlock = 0;
+                  break;
+
+               default:
+                  selPar.SelectionStartInBlock = 0;
+                  selPar.SelectionEndInBlock = selPar.BlockLength;
+                  break;
+            }
+         }
       }
 
-
-      ////Temp for debugging
-      //foreach (Paragraph p in Blocks.Where(p => !SelectionParagraphs.Contains(p)))
-      //    p.Background = new SolidColorBrush(Colors.Transparent); 
-      //foreach (Paragraph p in Blocks.Where(p => SelectionParagraphs.Contains(p)))
-      //   p.Background = new SolidColorBrush(Colors.Red);
+      foreach (Paragraph p in SelectionParagraphs)
+      {
+         if (p.IsTableCellBlock)
+            p.OwningCell.Selected = (p.SelectionStartInBlock == 0 && p.SelectionEndInBlock == p.BlockLength);
+      }
 
    }
 

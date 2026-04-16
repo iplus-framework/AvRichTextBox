@@ -1,10 +1,4 @@
-﻿using Avalonia.Controls;
-using Avalonia.Controls.Documents;
-using Avalonia.Media;
-using System.Diagnostics;
-using System.Text.RegularExpressions;
-
-namespace AvRichTextBox;
+﻿namespace AvRichTextBox;
 
 public partial class RichTextBox
 {
@@ -31,7 +25,7 @@ public partial class RichTextBox
    internal void UpdateCurrentParagraphLayout()
    {
       this.UpdateLayout();
-      rtbVM.UpdateCaretVisible();
+      RtbVm.UpdateCaretVisible();
    }
 
    internal void InsertParagraph()
@@ -52,23 +46,11 @@ public partial class RichTextBox
 
    }
 
-   public void SearchText(string searchText)
-   {        
-      MatchCollection matches = Regex.Matches(FlowDoc.Text, searchText);
-
-      if (matches.Count > 0)
-         FlowDoc.Select(matches[0].Index, matches[0].Length);
-
-      
-      foreach (Match m in matches)
-      {
-         TextRange trange = new (FlowDoc, m.Index, m.Index + m.Length);
-         FlowDoc.ApplyFormattingRange(Inline.FontStretchProperty, FontStretch.UltraCondensed, trange);
-         FlowDoc.ApplyFormattingRange(Inline.ForegroundProperty, new SolidColorBrush(Colors.BlueViolet), trange);
-         FlowDoc.ApplyFormattingRange(Inline.BackgroundProperty, new SolidColorBrush(Colors.Wheat), trange);
-      }
-         
-
+   internal void InsertTab()
+   {
+      if (IsReadOnly) return;
+      FlowDoc.InsertText("\t");
+      UpdateCurrentParagraphLayout();
 
    }
 
@@ -77,7 +59,7 @@ public partial class RichTextBox
    {
       if (IsReadOnly) return;
 
-      if (FlowDoc.Selection!.Length > 0)
+      if (FlowDoc.Selection.Length > 0)
          FlowDoc.DeleteSelection();
       else
       {

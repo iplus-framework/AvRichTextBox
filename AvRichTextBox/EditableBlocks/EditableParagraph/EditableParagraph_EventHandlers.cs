@@ -1,9 +1,8 @@
-﻿using Avalonia;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace AvRichTextBox;
 
-public partial class EditableParagraph
+internal partial class EditableParagraph
 {
    public delegate void MouseMoveHandler(EditableParagraph sender, int charIndex);
     public event MouseMoveHandler? MouseMove;

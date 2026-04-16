@@ -1,44 +1,40 @@
-﻿using DynamicData;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Reactive.Linq;
-
+﻿
 namespace AvRichTextBox;
 
 public partial class FlowDocument 
 {
 
+#if DEBUG
+
    internal bool ShowDebugger = false;
-   internal ObservableCollection<Paragraph> SelectionParagraphs { get; set; } = []; // for DebuggerPanel
 
    private void UpdateDebuggerSelectionParagraphs()
    {
 
-#if DEBUG
-
-      //SelectionParagraphs.Clear();
-      //SelectionParagraphs.AddRange(Blocks.Where(p => p.StartInDoc + p.BlockLength > Selection.Start && p.StartInDoc <= Selection.End).ToList().ConvertAll(bb => (Paragraph)bb));
-
       //Visuals for DebuggerPanel
-      foreach (Paragraph p in SelectionParagraphs)
+      foreach (Paragraph p in SelectionParagraphs.OfType<Paragraph>())
       {
          foreach (IEditable ied in p.Inlines)
          {
-            IEditable startInline = Selection.GetStartInline();
-            IEditable endInline = Selection.GetEndInline();
+            //Debug.WriteLine("inlineDisplayText = " + ied.InlineText + " --- " + ied.DisplayInlineText + " ---");
+
+            IEditable? startInline = Selection.GetStartInline();
+            IEditable? endInline = Selection.GetEndInline();
             int thisRunIndex = p.Inlines.IndexOf(ied);
-            ied.IsStartInline = ied == startInline;
-            ied.IsEndInline = ied == endInline;
-            ied.IsWithinSelectionInline =
-            startInline != null && endInline != null && thisRunIndex > p.Inlines.IndexOf(startInline) && thisRunIndex < p.Inlines.IndexOf(endInline);
+            ied.InlineVP.IsTableCellInline = p.IsTableCellBlock;
+            ied.InlineVP.IsStartInline = ied == startInline;
+            ied.InlineVP.IsEndInline = ied == endInline;
+            ied.InlineVP.IsWithinSelectionInline =
+               startInline != null &&
+               endInline != null &&
+               thisRunIndex > p.Inlines.IndexOf(startInline) && thisRunIndex < p.Inlines.IndexOf(endInline);
          }
       }
 
-#endif
 
    }
 
+#endif
 
 }
 

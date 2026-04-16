@@ -1,63 +1,31 @@
 ﻿using Avalonia.Controls.Documents;
 using DynamicData;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 
 namespace AvRichTextBox;
 
-internal class InsertCharUndo (int insertParIndex, int insertInlineIdx, int insertPos, FlowDocument flowDoc, int origSelectionStart) : IUndo
+internal class TextChangedUndo(FlowDocument flowDoc, int parId, int runId, int start, string deletedText, string insertText, int origSelectionStart) : IUndo
 {
    public int UndoEditOffset => -1;
    public bool UpdateTextRanges => true;
-
+   
    public void PerformUndo()
    {
-      try
-      {
-         if (flowDoc.Blocks[insertParIndex] is not Paragraph thisPar) return;
-         if (thisPar.Inlines[insertInlineIdx] is not Run thisRun) return;
-         thisRun!.Text = thisRun.Text!.Remove(insertPos, 1);
-         thisPar.CallRequestInlinesUpdate();
-         flowDoc.UpdateBlockAndInlineStarts(insertParIndex);
-         flowDoc.Selection.Start = origSelectionStart;
-         flowDoc.Selection.End = flowDoc.Selection.Start;
-      }
-      catch { Debug.WriteLine("Failed InsertCharUndo at inline idx: " + insertInlineIdx); }
+      if (flowDoc.AllParagraphs.FirstOrDefault(bl => bl.Id == parId) is not Paragraph thisPar) return;
+      if (thisPar.Inlines.FirstOrDefault(il=> il.Id == runId) is not Run thisRun) return;
+      if (insertText.Length> 0)
+         thisRun.Text = thisRun.Text!.Remove(start, insertText.Length);
+      if (deletedText.Length> 0)
+         thisRun.Text = thisRun.Text!.Insert(start, deletedText);
+
+      thisPar.CallRequestInlinesUpdate();
+      flowDoc.UpdateBlockAndInlineStarts(thisPar);
+      flowDoc.Selection.Start = origSelectionStart;
+      flowDoc.Selection.End = flowDoc.Selection.Start;
 
    }
 }
 
-internal class DeleteCharUndo(int deleteParIndex, int deleteInlineIdx, IEditable deletedRun, string deleteChar, int deletePos, FlowDocument flowDoc, int origSelectionStart) : IUndo
-{  
-   public int UndoEditOffset => 1;
-   public bool UpdateTextRanges => true;
-   internal int DeleteInlineIdx => deleteInlineIdx;
-
-   public void PerformUndo()
-   {
-      try
-      {
-         Paragraph thisPar = (Paragraph)flowDoc.Blocks[deleteParIndex];
-         if (deletedRun != null)
-            thisPar.Inlines.Insert(deleteInlineIdx, deletedRun);
-         else
-         {
-            Run? thisRun = thisPar.Inlines[deleteInlineIdx] as Run;
-            thisRun!.Text = thisRun.Text!.Insert(deletePos, deleteChar);
-         }
-         
-         thisPar.CallRequestInlinesUpdate();
-         flowDoc.UpdateBlockAndInlineStarts(deleteParIndex);
-         flowDoc.Selection.Start = origSelectionStart;
-         flowDoc.Selection.End = flowDoc.Selection.Start;
-      }
-      catch { Debug.WriteLine("Failed DeleteCharUndo at delete pos: " + deletePos); }
-   }
-      
-}
-
-internal class DeleteImageUndo(int deleteParIndex, IEditable deletedIUC, int deletedInlineIdx, FlowDocument flowDoc, int origSelectionStart, bool emptyRunAdded) : IUndo
+internal class DeleteImageUndo(int parId, IEditable deletedIUC, int deletedInlineIdx, FlowDocument flowDoc, int origSelectionStart, bool emptyRunAdded) : IUndo
 {
    public int UndoEditOffset => 1;
    public bool UpdateTextRanges => true;
@@ -66,12 +34,12 @@ internal class DeleteImageUndo(int deleteParIndex, IEditable deletedIUC, int del
    {
       try
       {
-         Paragraph thisPar = (Paragraph)flowDoc.Blocks[deleteParIndex];
+         if (flowDoc.AllParagraphs.FirstOrDefault(bl => bl.Id == parId) is not Paragraph thisPar) return;
          if (emptyRunAdded)
             thisPar.Inlines.RemoveAt(deletedInlineIdx);
          thisPar.Inlines.Insert(deletedInlineIdx, deletedIUC);
          thisPar.CallRequestInlinesUpdate();
-         flowDoc.UpdateBlockAndInlineStarts(deleteParIndex);
+         flowDoc.UpdateBlockAndInlineStarts(thisPar);
          flowDoc.Selection.Start = origSelectionStart;
          flowDoc.Selection.End = flowDoc.Selection.Start;
       }
@@ -80,7 +48,29 @@ internal class DeleteImageUndo(int deleteParIndex, IEditable deletedIUC, int del
       
 }
 
-internal class PasteUndo(Dictionary<Block, List<IEditable>> keptParsAndInlines, int parIndex, FlowDocument flowDoc, int origSelectionStart, int undoEditOffset) : IUndo
+internal class DeleteRunUndo(int parId, EditableRun removedRunClone, int deletedRunIdx, FlowDocument flowDoc, int origSelectionStart) : IUndo
+{
+   public int UndoEditOffset => 1;
+   public bool UpdateTextRanges => true;
+   
+   public void PerformUndo()
+   {
+      try
+      {
+         if (flowDoc.AllParagraphs.FirstOrDefault(bl => bl.Id == parId) is not Paragraph thisPar) return;
+         thisPar.Inlines.Insert(deletedRunIdx, removedRunClone);
+         thisPar.CallRequestInlinesUpdate();
+         flowDoc.UpdateBlockAndInlineStarts(thisPar);
+         flowDoc.Selection.Start = origSelectionStart;
+         flowDoc.Selection.End = flowDoc.Selection.Start;
+      }
+      catch { Debug.WriteLine("Failed DeleteImageUndo at delete pos: " + origSelectionStart); }
+   }
+      
+}
+
+
+internal class PasteUndo(List<Paragraph> keptPars, int parIndex, FlowDocument flowDoc, int origSelectionStart, int undoEditOffset) : IUndo
 {
    public int UndoEditOffset => undoEditOffset;
    public bool UpdateTextRanges => true;
@@ -89,7 +79,7 @@ internal class PasteUndo(Dictionary<Block, List<IEditable>> keptParsAndInlines, 
    {
       try
       {
-         flowDoc.RestoreDeletedBlocks(keptParsAndInlines, parIndex);
+         flowDoc.RestoreDeletedBlocks(keptPars, parIndex);
 
          flowDoc.Selection.Start = 0;  //??? why necessary for caret?
          flowDoc.Selection.End = 0;
@@ -101,7 +91,7 @@ internal class PasteUndo(Dictionary<Block, List<IEditable>> keptParsAndInlines, 
    }
 }
 
-internal class DeleteRangeUndo (Dictionary<Block, List<IEditable>> keptParsAndInlines, int parIndex, FlowDocument flowDoc, int origSelectionStart, int undoEditOffset) : IUndo
+internal class DeleteRangeUndo (List<Paragraph> keptParClones, int startParId, FlowDocument flowDoc, int origSelectionStart, int undoEditOffset) : IUndo
 {  //parInlines are cloned inlines
 
    public int UndoEditOffset => undoEditOffset;
@@ -111,23 +101,29 @@ internal class DeleteRangeUndo (Dictionary<Block, List<IEditable>> keptParsAndIn
    {
       try
       {
-         flowDoc.RestoreDeletedBlocks(keptParsAndInlines, parIndex);
+         
+         if (flowDoc.AllParagraphs.FirstOrDefault(bl => bl.Id == startParId) is not Paragraph startPar) return;
+         int parIndex = flowDoc.AllParagraphs.IndexOf(startPar);
 
-         flowDoc.Selection.Start = 0;  //??? why necessary for caret?
-         flowDoc.Selection.End = 0;
+         flowDoc.RestoreDeletedBlocks(keptParClones, parIndex);  ///$$$$$$$$
+
+         flowDoc.Selection.Start = Math.Max (0, origSelectionStart -1);  //necessary to reset caret
+         flowDoc.Selection.CollapseToStart();
+
          flowDoc.Selection.Start = origSelectionStart;
          flowDoc.Selection.End = origSelectionStart;
-
          flowDoc.UpdateSelection();
+         
       }
-      catch { Debug.WriteLine("Failed DeleteRangeUndo at ParIndex: " + parIndex); }
+      catch { Debug.WriteLine("Failed DeleteRangeUndo at Par: " + startParId); }
    }
 
 }
 
 
-internal class InsertParagraphUndo (FlowDocument flowDoc, int insertedParIndex, List<IEditable> keepParInlines, int origSelectionStart, int undoEditOffset) : IUndo
-{  
+internal class InsertParagraphUndo (FlowDocument flowDoc, int origParId, int insertedParId, List<IEditable> keepParInlines, int origSelectionStart, int undoEditOffset) : IUndo
+{  //all original inlines preserved, so no need to worry about split inlines
+
    public int UndoEditOffset => undoEditOffset;
    public bool UpdateTextRanges => true;
 
@@ -135,22 +131,25 @@ internal class InsertParagraphUndo (FlowDocument flowDoc, int insertedParIndex, 
    {
       try
       {
-         Paragraph insertedPar = (Paragraph)flowDoc.Blocks[insertedParIndex];
-         insertedPar.Inlines.Clear();
-         insertedPar.Inlines.AddRange(keepParInlines);
-         flowDoc.Blocks.RemoveAt(insertedParIndex + 1);
-         flowDoc.UpdateBlockAndInlineStarts(insertedParIndex);
-         //flowDoc.MergeParagraphForward(insertedIndex, false, origSelectionStart);
+         if (flowDoc.Blocks.FirstOrDefault(bl => bl.Id == insertedParId) is not Paragraph insertedPar) return;
+         if (flowDoc.Blocks.FirstOrDefault(bl => bl.Id == origParId) is not Paragraph origPar) return;
+         origPar.Inlines.Clear();
+         origPar.Inlines.AddRange(keepParInlines);
+         flowDoc.Blocks.Remove(insertedPar);
+
+         int idx = flowDoc.Blocks.IndexOf(origPar); ///////////////$$$$$$
+
+         flowDoc.UpdateBlockAndInlineStarts(idx);
          flowDoc.Selection.Start = origSelectionStart;
          flowDoc.Selection.End = flowDoc.Selection.Start;
       }
-      catch { Debug.WriteLine("Failed InsertParagraphUndo at InsertedIndex: " + insertedParIndex); }
+      catch { Debug.WriteLine("Failed InsertParagraphUndo at Inserted par id: " + insertedParId); }
 
    }
 }
 
 
-internal class MergeParagraphUndo (int origMergedParInlinesCount, int mergedParIndex, Paragraph removedPar, FlowDocument flowDoc, int originalSelectionStart) : IUndo 
+internal class MergeParagraphUndo (int origMergedParInlinesCount, int mergedParId, Paragraph removedParClone, FlowDocument flowDoc, int originalSelectionStart) : IUndo 
 { //removedPar is a clone
 
    public int UndoEditOffset => 1;
@@ -160,48 +159,110 @@ internal class MergeParagraphUndo (int origMergedParInlinesCount, int mergedParI
    {
       try
       {
-         //flowDoc.InsertParagraph(false, mergedCharIndex);
-
-         Paragraph mergedPar = (Paragraph)flowDoc.Blocks[mergedParIndex];
+         if (flowDoc.Blocks.FirstOrDefault(bl => bl.Id == mergedParId) is not Paragraph mergedPar) return;
+         int mergedParIndex = flowDoc.Blocks.IndexOf(mergedPar);
 
          for (int rno = mergedPar.Inlines.Count - 1; rno >= origMergedParInlinesCount; rno--)
             mergedPar.Inlines.RemoveAt(rno);
 
-         flowDoc.Blocks.Insert(mergedParIndex + 1, removedPar);
+         if (mergedPar.Inlines.Count == 0)
+            mergedPar.Inlines.Add(new EditableRun(""));
+         
+         mergedPar.CallRequestInlinesUpdate();
+         mergedPar.UpdateEditableRunPositions();
+
+         flowDoc.Blocks.Insert(mergedParIndex + 1, removedParClone);
 
          flowDoc.UpdateBlockAndInlineStarts(mergedParIndex);
          flowDoc.Selection.End = originalSelectionStart;
          flowDoc.Selection.Start = originalSelectionStart;
                   
       }
-      catch { Debug.WriteLine("Failed MergeParagraphUndo at MergedParIndex: " + mergedParIndex); }
+      catch { Debug.WriteLine("Failed MergeParagraphUndo at MergedPar: " + mergedParId); }
    }
 }
 
 
-internal class ApplyFormattingUndo (FlowDocument flowDoc, List<IEditablePropertyAssociation> propertyAssociations, int originalSelection, TextRange tRange) : IUndo 
+internal class ApplyFormattingUndo (FlowDocument flowDoc, List<IEditablePropertyAssociation> propertyAssociations, (int LeftId, int RightId) edgeIds, int originalSelection, TextRange tRange) : IUndo 
 {
    public int UndoEditOffset => 0;
    public bool UpdateTextRanges => false;
 
    public void PerformUndo()
    {
+      flowDoc.disableRunTextUndo = true;
+
+      int rangeStart = tRange.Start;
+      int rangeEnd = tRange.End;
+
+      List<Paragraph> allPars = flowDoc.AllParagraphs;
 
       foreach (IEditablePropertyAssociation propassoc in propertyAssociations)
-         if (propassoc.FormatRun != null)
-            flowDoc.ApplyFormattingInline(propassoc.FormatRun, propassoc.InlineItem, propassoc.PropertyValue);
+      { 
+         if (allPars.FirstOrDefault(bl => bl.Id == propassoc.BlockId) is Paragraph p && p.Inlines.FirstOrDefault(il => il.Id == propassoc.InlineId) is IEditable iline)
+            flowDoc.ApplyFormattingInline(propassoc.FormatRun, iline, propassoc.PropertyValue);
+      }
 
-      foreach (Paragraph p in flowDoc.GetRangeBlocks(tRange).Where(b=>b.IsParagraph))
-         p.CallRequestInlinesUpdate();
+      if (allPars.FirstOrDefault(bl => bl.Id == propertyAssociations[0].BlockId) is not Paragraph firstPar ||
+         firstPar.Inlines.FirstOrDefault(il => il.Id == propertyAssociations[0].InlineId) is not IEditable ilineFirst ||
+         firstPar.Inlines.FirstOrDefault(il => il.Id == edgeIds.LeftId) is not IEditable ilineLeft) return; 
+
+      if (allPars.FirstOrDefault(bl => bl.Id == propertyAssociations[^1].BlockId) is not Paragraph lastPar ||
+         lastPar.Inlines.FirstOrDefault(il => il.Id == propertyAssociations[^1].InlineId) is not IEditable ilineLast ||
+         lastPar.Inlines.FirstOrDefault(il => il.Id == edgeIds.RightId) is not IEditable ilineRight) return; 
       
+      if (ilineLast.Id > ilineRight.Id)
+      {
+         ilineRight.InlineText = ilineLast.InlineText + ilineRight.InlineText;
+         lastPar.Inlines.Remove(ilineLast);
+      }
+
+      if (ilineLeft.Id != ilineFirst.Id)
+      {
+         if (propertyAssociations.Count == 1)
+         {
+            if (edgeIds.LeftId > edgeIds.RightId)
+            {
+               ilineRight.InlineText = ilineLeft.InlineText + ilineRight.InlineText;
+               firstPar.Inlines.Remove(ilineLeft);
+            }
+         }
+         else
+         {
+            int lowestId = Math.Min(ilineLeft.Id, ilineFirst.Id);
+
+            if (ilineLeft.Id > ilineFirst.Id)
+            {
+               ilineFirst.InlineText = ilineLeft.InlineText + ilineFirst.InlineText;
+               firstPar.Inlines.Remove(ilineLeft);
+               ilineFirst.Id = lowestId;
+            }
+            else
+            {
+               ilineLeft.InlineText += ilineFirst.InlineText;
+               firstPar.Inlines.Remove(ilineFirst);
+            }
+         }
+      }
+
+      foreach (Paragraph p in flowDoc.GetOverlappingParagraphsInRange(rangeStart, rangeEnd).OfType<Paragraph>())
+      {
+         p.CallRequestInlinesUpdate();
+         p.UpdateEditableRunPositions();
+      }
+
+      lastPar.CallRequestInlinesUpdate();  // fail-safe
+
       flowDoc.Selection.Start = originalSelection;
       flowDoc.Selection.End = originalSelection;
+
+      flowDoc.disableRunTextUndo = false;
 
    }
 }
 
 
-internal class InsertLineBreakUndo(int insertParIndex, int insertInlineIdx, FlowDocument flowDoc, int origSelectionStart) : IUndo
+internal class InsertLineBreakUndo(int insertParId, int insertedLBId, (int addedInlineLeftId, int addedInlineRightId) addedInlines, int insertIdx, IEditable origInlineClone, FlowDocument flowDoc, int origSelectionStart) : IUndo
 {
    public int UndoEditOffset => -1;
    public bool UpdateTextRanges => true;
@@ -210,15 +271,53 @@ internal class InsertLineBreakUndo(int insertParIndex, int insertInlineIdx, Flow
    {
       try
       {
-         if (flowDoc.Blocks[insertParIndex] is not Paragraph thisPar) return;
-         if (thisPar.Inlines[insertInlineIdx] is not EditableLineBreak thisELB) return;
+         if (flowDoc.AllParagraphs.FirstOrDefault(bl => bl.Id == insertParId) is not Paragraph thisPar) return;
+         if (thisPar.Inlines.FirstOrDefault(lb => lb.Id == insertedLBId) is not EditableLineBreak thisELB) return;
+         if (thisPar.Inlines.FirstOrDefault(il => il.Id == addedInlines.addedInlineLeftId) is not IEditable iedLeft) return;
+         if (thisPar.Inlines.FirstOrDefault(il => il.Id == addedInlines.addedInlineRightId) is not IEditable iedRight) return;
+         
+         thisPar.Inlines.Remove(iedLeft);
+         thisPar.Inlines.Remove(iedRight);
          thisPar.Inlines.Remove(thisELB);
+         thisPar.Inlines.Insert(insertIdx, origInlineClone);
+
          thisPar.CallRequestInlinesUpdate();
-         flowDoc.UpdateBlockAndInlineStarts(insertParIndex);
+         flowDoc.UpdateBlockAndInlineStarts(thisPar);
          flowDoc.Selection.Start = origSelectionStart;
          flowDoc.Selection.End = flowDoc.Selection.Start;
       }
-      catch { Debug.WriteLine("Failed InsertCharUndo at inline idx: " + insertInlineIdx); }
+      catch { Debug.WriteLine("Failed InsertCharUndo of linebreak"); }
+
+   }
+}
+
+internal class DeleteLineBreakUndo(int parId, int lineBreakId, FlowDocument flowDoc, int origSelectionStart) : IUndo
+{
+   public int UndoEditOffset => -1;
+   public bool UpdateTextRanges => true;
+
+   public void PerformUndo()
+   {
+      if (flowDoc.AllParagraphs.FirstOrDefault(bl => bl.Id == parId) is not Paragraph thisPar) return;
+            
+      if (flowDoc.GetStartInline(origSelectionStart) is IEditable startInline)
+      {
+         int runIdx = thisPar.Inlines.IndexOf(startInline);
+         int charPosInInline = flowDoc.GetCharPosInInline(startInline, origSelectionStart);
+         if (charPosInInline > 0)
+         {
+            List<IEditable> newRuns = flowDoc.SplitRunAtPos(origSelectionStart, startInline, charPosInInline);
+            runIdx += 1;
+         }
+
+         thisPar.Inlines.Insert(runIdx, new EditableLineBreak() { Id = lineBreakId });
+
+         thisPar.CallRequestInlinesUpdate();
+         flowDoc.UpdateBlockAndInlineStarts(thisPar);
+         flowDoc.Selection.Start = origSelectionStart;
+         flowDoc.Selection.End = flowDoc.Selection.Start;
+      }
+      
 
    }
 }

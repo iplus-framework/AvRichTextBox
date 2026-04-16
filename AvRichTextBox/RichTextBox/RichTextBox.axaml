@@ -1,85 +1,63 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:dataannotations="using:System.ComponentModel.DataAnnotations"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:system="using:System"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450" Background="WhiteSmoke"
-			 xmlns:local="using:AvRichTextBox" KeyDown="RichTextBox_KeyDown"  Focusable="True"
-	         x:Class="AvRichTextBox.RichTextBox" PointerReleased="RichTextBox_PointerReleased" PointerExited="RichTextBox_PointerExited"
-			 BorderBrush="Black" BorderThickness="1" Padding="2" x:CompileBindings="false" >
-  
-  <DockPanel x:Name="MainDP" MinWidth="{Binding MinWidth}">
+			 xmlns:local="using:AvRichTextBox" 
+			 x:Class="AvRichTextBox.RichTextBox" 
+			 PointerReleased="RichTextBox_PointerReleased" PointerExited="RichTextBox_PointerExited" KeyDown="RichTextBox_KeyDown"  Focusable="True"
+			 BorderBrush="Black" BorderThickness="1" Padding="2" >
 
-		<!--VISUAL DEBUGGER - Use this panel for debugging, to show a right-docked panel with visualization of runs.  It is 
-			auto hidden and inactive in Release mode, and default hidden in Debug mode but can be set by setting RunDebuggerVisible-->
-		<Border x:Name="RunDebugPanel" Width="400" BorderBrush="Gray" BorderThickness="1.5" IsVisible="{Binding RunDebuggerVisible}" DockPanel.Dock="Right">
-			<DockPanel x:Name="RunDebugger" DataContext="{Binding FlowDoc}"  >
-				<DockPanel DockPanel.Dock="Top" Background="Coral">
+	<UserControl.Styles>
 
-					<Border x:Name="DocSelPanel" DockPanel.Dock="Top" BorderBrush="Black" BorderThickness="0.8">
-						<DockPanel>
-							<TextBlock DockPanel.Dock="Top" Background="LightGray" Text="{Binding Selection.Start, StringFormat='DocSelStart={0}'}"/>
-							<TextBlock Background="LightGray" Text="{Binding Selection.End, StringFormat='DocSelEnd={0}'}"/>
-						</DockPanel>
-					</Border>
-				</DockPanel>
+		<Style Selector="local|EditableTable">
+		  <Setter Property="Template">
+			<ControlTemplate>
+			  <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+				 <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}"/>
+			  </Border>
+			</ControlTemplate>
+		  </Setter>
+		</Style>
 
-				<Grid Margin="10, 1, 10, 1" ColumnDefinitions="50* 10* 10* 10*" HorizontalAlignment="Stretch" ShowGridLines="True" DockPanel.Dock="Top">
+		<Style Selector="local|EditableTable > ContentPresenter">
+			<Setter Property="Grid.Row" Value="{Binding RowNo}" />
+			<Setter Property="Grid.Column" Value="{Binding ColNo}" />
+			<Setter Property="Grid.ColumnSpan" Value="{Binding ColSpan}" />
+			<Setter Property="Grid.RowSpan" Value="{Binding RowSpan}" />
+		</Style>
 
-					<TextBlock Grid.Column="0" Text="Text" TextAlignment="Center" />
-					<TextBlock  Grid.Column="1" Text="Idx" TextAlignment="Center" />
-					<TextBlock  Grid.Column="2" Text="Len" TextAlignment="Center" />
-					<TextBlock  Grid.Column="3" Text="Font" TextAlignment="Center" />
-				</Grid>
+		 <Style Selector="local|EditableParagraph.paragraphBindings">
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<Setter Property="Margin" Value="5"/>
+			 <!--LineHeight="{Binding LineHeight}"-->
+			<Setter Property="LineSpacing" Value="{Binding LineSpacing}"/>
+			<Setter Property="FontFamily" Value="{Binding FontFamily}"/>
+			<Setter Property="FontWeight" Value="{Binding FontWeight}"/>
+			<Setter Property="FontSize" Value="{Binding FontSize}"/>
+			<Setter Property="Background" Value="{Binding Background}"/>
+			<Setter Property="TextAlignment" Value="{Binding TextAlignment}"/>
+			<Setter Property="SelectionBrush" Value="{Binding SelectionBrush}"/>
+			<Setter Property="VerticalAlignment" Value="{Binding VerticalAlignment}"/>
 
-				<ListBox DockPanel.Dock="Top" ItemsSource="{Binding SelectionParagraphs}" Background="Wheat" BorderBrush="Black" BorderThickness="1" Padding="0" >
-					<ListBox.ItemTemplate>
-						<DataTemplate>
-							<DockPanel>
-								<DockPanel DockPanel.Dock="Top" Background="AliceBlue">
-									<TextBlock DockPanel.Dock="Left" Text="{Binding Inlines.Count, StringFormat='Inlines={0}'}"/>
-									<TextBlock Margin="20, 0, 0, 0" Text="{Binding StartInDoc, StringFormat='ParStartIdxInDoc={0}'}" ToolTip.Tip="{Binding ParToolTip}" />
-								</DockPanel>
+			<Setter Property="SelectionStart" Value="{Binding SelectionStartInBlock, Mode=TwoWay}"/>
+			<Setter Property="SelectionEnd" Value="{Binding SelectionEndInBlock, Mode=TwoWay}"/>
+		</Style>
 
-
-								<ItemsControl  ItemsSource="{Binding Inlines}" Margin="-5, 2, -5, 20"  BorderBrush="DarkBlue" BorderThickness="0.7" >
-
-									<ItemsControl.ItemTemplate>
-										<DataTemplate>
-											<Border BorderBrush="Black" BorderThickness="{Binding InlineSelectedBorderThickness}" Background="{Binding BackBrush}">
-												<Grid ColumnDefinitions="50* 10* 10* 10*" HorizontalAlignment="Stretch" ShowGridLines="True" Margin="0" >
-													<TextBlock Margin="3, 0" Grid.Column="0" Text="{Binding DisplayInlineText}" TextWrapping="Wrap"
-															   FontWeight="{Binding FontWeight}" FontStyle="{Binding FontStyle}"
-															   TextDecorations="{Binding TextDecorations}" ToolTip.Tip="{Binding InlineToolTip}" />
-													<TextBlock  Grid.Column="1" Text="{Binding TextPositionOfInlineInParagraph}" TextAlignment="Center" />
-													<TextBlock  Grid.Column="2" Text="{Binding InlineText.Length}" TextAlignment="Center" />
-													<TextBlock  Grid.Column="3" Text="{Binding FontName}" TextAlignment="Center" />
-												</Grid>
-											</Border>
-										</DataTemplate>
-									</ItemsControl.ItemTemplate>
-								</ItemsControl>
+	</UserControl.Styles>
 
 
-							</DockPanel>
-
-						</DataTemplate>
-
-					</ListBox.ItemTemplate>
-
-				</ListBox>
-
-			</DockPanel>
-
-		</Border>
+	<DockPanel x:Name="MainDP" MinWidth="{Binding MinWidth}">  <!--this binds to viewmodel-->
 
 
-		<ScrollViewer x:Name="FlowDocSV"  HorizontalScrollBarVisibility="Disabled" Margin="0" Padding="0"
-					   Offset="{Binding RTBScrollOffset, Mode=OneWay}"  ScrollChanged="ScrollViewer_ScrollChanged"
+		<ScrollViewer x:Name="FlowDocSV"  HorizontalScrollBarVisibility="Disabled" Margin="0" Padding="0" Offset="{Binding RTBScrollOffset, Mode=OneWay}"  ScrollChanged="ScrollViewer_ScrollChanged"
 					  PointerPressed="FlowDocSV_PointerPressed" PointerMoved="FlowDocSV_PointerMoved" PointerReleased="FlowDocSV_PointerReleased" >
-
 
 			<Grid VerticalAlignment="Top">
 
+				<!-- The FlowDocument itself -->
 				<ItemsControl x:Name="DocIC" DataContext="{Binding FlowDoc}" VerticalAlignment="Top" ItemsSource="{Binding Blocks}" Margin="0" Padding="{Binding PagePadding}" >
 
 					<ItemsControl.ItemsPanel>
@@ -95,46 +73,66 @@
 							<ContentControl Content="{Binding}" HorizontalAlignment="Stretch" >
 
 								<ContentControl.DataTemplates>
+								
+									<!-- Template for EditableParagraph -->
 									<DataTemplate DataType="local:Paragraph">
 									
 										<Border BorderThickness="{Binding BorderThickness}" BorderBrush="{Binding BorderBrush}" CornerRadius="3" Margin="{Binding Margin}"
 											  VerticalAlignment="Top" HorizontalAlignment="Stretch" Padding="0">
 
-											<!--LineHeight="{Binding LineHeight}"-->
-
-											<local:EditableParagraph xml:space="preserve" TextWrapping="Wrap" Margin="0"
-													LineSpacing="{Binding LineSpacing}"
-													FontFamily="{Binding FontFamily}"
-													FontWeight="{Binding FontWeight}"
-													FontSize="{Binding FontSize}"
-													Background="{Binding Background}"
-													TextAlignment="{Binding TextAlignment}"
-													SelectionBrush="{Binding SelectionBrush}"
-																		 
-													SelectionStart="{Binding SelectionStartInBlock, Mode=TwoWay}"
-													SelectionEnd="{Binding SelectionEndInBlock, Mode=TwoWay}"
-														
-													MouseMove="EditableParagraph_MouseMove"
-													LostFocus="EditableParagraph_LostFocus"
-													TextLayoutInfoStartRequested="{Binding RequestTextLayoutInfoStart}"
-													TextLayoutInfoEndRequested="{Binding RequestTextLayoutInfoEnd}"
-														 
+											<local:EditableParagraph Classes="paragraphBindings" xml:space="preserve"	
+													MouseMove="EditableParagraph_MouseMove" 
+													LostFocus="EditableParagraph_LostFocus" 
 													SelectionStartRect_Changed="SelectionStart_RectChanged"
 													SelectionEndRect_Changed="SelectionEnd_RectChanged"
+
+													TextLayoutInfoStartRequested="{Binding RequestTextLayoutInfoStart}"
+													TextLayoutInfoEndRequested="{Binding RequestTextLayoutInfoEnd}"
 													local:RequestExtensions.TextBoxFocusRequested="{Binding RequestTextBoxFocus}"
 													local:RequestExtensions.IsInlineUpdateRequested="{Binding RequestInlinesUpdate}"
-													local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}" />
-
+													local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}"
+													/>
+											
 										</Border>
 									</DataTemplate>
 
 
-									<!--<DataTemplate DataType="local:Table" >
-												<Border BorderBrush="Black" BorderThickness="{Binding BorderThickness}" Background="Azure" >
-													<local:EditableTable HorizontalAlignment="Stretch" Cells="{Binding Cells}" Background="Coral"
-																		 ColDefs="{Binding ColDefs}" RowDefs="{Binding RowDefs}" />
-												</Border>
-											</DataTemplate>-->
+									<!-- Template for EditableTable -->
+									<DataTemplate DataType="local:Table" >
+											
+										<local:EditableTable Background="GhostWhite"  BorderBrush="{Binding BorderBrush}" BorderThickness="{Binding BorderThickness}" Margin="{Binding Margin}" HorizontalAlignment="{Binding TableAlignment}" Width="{Binding Width}" Height="{Binding Height}" ItemsSource="{Binding Cells}" >
+
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate>
+														<local:BindableGrid RowDefs="{Binding RowDefs}" ColDefs="{Binding ColDefs}" />
+													</ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+
+												<ItemsControl.ItemTemplate>
+													<DataTemplate x:DataType="{x:Type local:Cell}">
+														<Grid>
+															<local:EditableCell Padding="{Binding Padding}"  BorderThickness="{Binding BorderThickness}" BorderBrush="{Binding BorderBrush}" Background="{Binding CellBackground}" >
+															
+																<local:EditableParagraph x:DataType="local:Paragraph" Classes="paragraphBindings" DataContext="{Binding CellContent}" xml:space="preserve" 
+																	MouseMove="EditableParagraph_MouseMove" 
+																	LostFocus="EditableParagraph_LostFocus" 
+																	SelectionStartRect_Changed="SelectionStart_RectChanged"
+																	SelectionEndRect_Changed="SelectionEnd_RectChanged"
+																
+																	TextLayoutInfoStartRequested="{Binding RequestTextLayoutInfoStart}"
+																	TextLayoutInfoEndRequested="{Binding RequestTextLayoutInfoEnd}"
+																	local:RequestExtensions.TextBoxFocusRequested="{Binding RequestTextBoxFocus}"
+																	local:RequestExtensions.IsInlineUpdateRequested="{Binding RequestInlinesUpdate}"
+																	local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}"
+																	/>  
+															</local:EditableCell>
+															<Rectangle Fill="{Binding SelectionBrush}" Opacity="0.45" IsVisible="{Binding Selected}"/>
+														</Grid>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+										</local:EditableTable>
+										
+									</DataTemplate>
 
 								</ContentControl.DataTemplates>
 							</ContentControl>
@@ -144,12 +142,8 @@
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
 
-				<TextBlock x:Name="PreeditOverlay" Padding="4, 0, 4, 2" Height="24" FontSize="15" HorizontalAlignment="Left" VerticalAlignment="Top"
-						 Foreground="Black" Background="#DDDDDD" IsHitTestVisible="False" IsVisible="False"/>
-
-				<!--test lines for caret measurement --><!--
-				<Rectangle Stroke="Red" StrokeThickness="2" Width="10" HorizontalAlignment="Left" VerticalAlignment="Top"  Margin="{Binding LineHeightRectMargin}" Height="{Binding LineHeightRectHeight}"/>
-				<Rectangle Stroke="Blue" StrokeThickness="2" Width="15" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="{Binding BaseLineRectMargin}" Height="{Binding BaseLineRectHeight}"/>-->
+				<TextBlock x:Name="PreeditOverlay" Padding="4, 0, 4, 2" Height="24" FontSize="15" HorizontalAlignment="Left" VerticalAlignment="Top" Foreground="Black" Background="#DDDDDD" IsHitTestVisible="False" IsVisible="False"/>
+							
 				
 			</Grid>
 		</ScrollViewer>

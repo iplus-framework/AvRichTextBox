@@ -82,9 +82,33 @@ public partial class RichTextBox
                   HideIMEOverlay();
                break;
 
+            case Key.Tab:
+               e.Handled = true;
+               if (FlowDoc.Selection.GetStartPar() is Paragraph p && p.IsTableCellBlock)
+               {
+                  if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                  {
+                     if (FlowDoc.GetPreviousParagraph(p) is Paragraph prevPar)
+                        FlowDoc.Select(prevPar.StartInDoc, 0);
+                  }
+                  else
+                  {
+                     if (FlowDoc.GetNextParagraph(p) is Paragraph nextPar)
+                        FlowDoc.Select(nextPar.StartInDoc, 0);
+                  }
+               }
+               else
+                  InsertTab();
+               break;
+
             case Key.Enter:
                if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                  InsertLineBreak();
+               {
+                  if (LineBreakOnShiftEnter)
+                     InsertLineBreak();
+                  else
+                     InsertParagraph();
+               }
                else
                   InsertParagraph();
                break;
@@ -144,7 +168,7 @@ public partial class RichTextBox
 
          }
 
-         rtbVM.CaretVisible = (rtbVM.FlowDoc.Selection.Length == 0);
+         RtbVm.CaretVisible = (RtbVm.FlowDoc.Selection.Length == 0);
          if (client != null)
             UpdatePreeditOverlay();
 

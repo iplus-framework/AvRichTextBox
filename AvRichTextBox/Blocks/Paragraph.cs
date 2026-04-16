@@ -1,74 +1,55 @@
-﻿using Avalonia;
-using Avalonia.Controls;
+﻿using Avalonia.Layout;
 using Avalonia.Media;
-using DocumentFormat.OpenXml.Drawing;
-using System;
-using System.Collections.Generic;
+using DynamicData;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Linq;
 
 namespace AvRichTextBox;
 
 public class Paragraph : Block
 {
+#if DEBUG
+   public string ParToolTip => $"Background: {Background}\nLineSpacing: {LineSpacing}\nLineHeight: {LineHeight}";
+#endif
 
    public ObservableCollection<IEditable> Inlines { get; set; } = [];
 
-   public Paragraph()
+   public Paragraph() { }
+
+   public Paragraph(FlowDocument owningFlowDoc)
    {
+      MyFlowDoc = owningFlowDoc;
+
       Inlines.CollectionChanged += Inlines_CollectionChanged;
+      Id = ++FlowDocument.ParagraphIdCounter;
+
+      SelectionBrush = owningFlowDoc.SelectionBrush;
+
    }
 
    private void Inlines_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
    {
       foreach (IEditable ied in Inlines)
-         ied.myParagraph = this;
-            
+      {
+         ied.MyParagraphId = this.Id;
+         ied.MyFlowDoc = this.MyFlowDoc;
+         ied.IsTableCellInline = this.IsTableCellBlock;
+         ied.IsLastInlineOfParagraph = ied == this.Inlines[^1];
+      }
    }
 
-   public string ParToolTip => $"Background: {Background}\nLineSpacing: {LineSpacing}\nLineHeight: {LineHeight}";
-   //public string ParToolTip => $"Background: {Background}\nLineHeight: {LineHeight}";
-   
-   //public string Text => string.Join("", Inlines.ToList().ConvertAll(ied => ied.InlineText));
-
-   private Thickness _BorderThickness = new Thickness(0);
-   public Thickness BorderThickness { get => _BorderThickness; set { _BorderThickness = value; NotifyPropertyChanged(nameof(BorderThickness)); } }
-
-   private SolidColorBrush _BorderBrush = new (Colors.Transparent);
-   public SolidColorBrush BorderBrush { get => _BorderBrush; set { _BorderBrush = value; NotifyPropertyChanged(nameof(BorderBrush)); } }
-
-   private SolidColorBrush _Background = new (Colors.Transparent);
-   public SolidColorBrush Background { get => _Background; set { _Background = value; NotifyPropertyChanged(nameof(Background)); } }
-
-   //private FontFamily _FontFamily = new ("ＭＳ 明朝, Times New Roman");
-   private FontFamily _FontFamily = new ("Meiryo");
-   //private FontFamily _FontFamily = "Meiryo";
-   public FontFamily FontFamily { get => _FontFamily; set { _FontFamily = value; NotifyPropertyChanged(nameof(FontFamily)); } }
-
-   private double _FontSize = 16D;
-   public double FontSize { get => _FontSize; set { _FontSize = value; NotifyPropertyChanged(nameof(FontSize)); } }
-
-   private double _LineHeight = 18.666D;  // fontsize normally
-   public double LineHeight { get => _LineHeight; set { _LineHeight = value; NotifyPropertyChanged(nameof(LineHeight)); CallRequestInlinesUpdate(); CallRequestTextLayoutInfoStart(); } }
-
-   private double _LineSpacing = 0D;
-   public double LineSpacing { get => _LineSpacing; set { _LineSpacing = value; NotifyPropertyChanged(nameof(LineSpacing)); CallRequestInlinesUpdate(); CallRequestTextLayoutInfoStart(); } }
-
-   private FontWeight _FontWeight = FontWeight.Normal;
-   public FontWeight FontWeight { get => _FontWeight; set { _FontWeight = value; NotifyPropertyChanged(nameof(FontWeight)); } }
-
-   private FontStyle _FontStyle = FontStyle.Normal;
-   public FontStyle FontStyle{ get => _FontStyle; set { _FontStyle = value; NotifyPropertyChanged(nameof(FontStyle)); } }
-
-   private TextAlignment _TextAlignment = TextAlignment.Left;
-   public TextAlignment TextAlignment { get => _TextAlignment; set { _TextAlignment = value; NotifyPropertyChanged(nameof(TextAlignment)); } }
-
-   //private SolidColorBrush _SelectionForegroundBrush = new (Colors.Black);  // in Avalonia > 11.1, setting this alters the selection font for some reason
-   //public SolidColorBrush SelectionForegroundBrush { get => _SelectionForegroundBrush; set { _SelectionForegroundBrush = value; NotifyPropertyChanged(nameof(SelectionForegroundBrush)); } }
-
-   private SolidColorBrush _SelectionBrush = LightBlueBrush;
-   public SolidColorBrush SelectionBrush { get => _SelectionBrush; set { _SelectionBrush = value; NotifyPropertyChanged(nameof(SelectionBrush)); } }
+   public Thickness BorderThickness { get;  set { field = value; NotifyPropertyChanged(nameof(BorderThickness)); } } = new(0);
+   public ISolidColorBrush BorderBrush { get; set { field = value; NotifyPropertyChanged(nameof(BorderBrush)); } } = new SolidColorBrush(Colors.Transparent);
+   public ISolidColorBrush Background { get; set { field = value; NotifyPropertyChanged(nameof(Background)); } } = new SolidColorBrush(Colors.Transparent);
+   public FontFamily FontFamily { get; set { field = value; NotifyPropertyChanged(nameof(FontFamily)); } } = new("Meiryo");
+   public double FontSize { get; set { field = value; NotifyPropertyChanged(nameof(FontSize)); } } = 16D;
+   public double LineHeight { get; set { field = value; NotifyPropertyChanged(nameof(LineHeight)); } } = 18.666D;  // fontsize normally
+   public double LineSpacing { get; set { field = value; NotifyPropertyChanged(nameof(LineSpacing)); } } = 0D;
+   public FontWeight FontWeight { get; set { field = value; NotifyPropertyChanged(nameof(FontWeight)); } } = FontWeight.Normal;
+   public FontStyle FontStyle{ get; set { field = value; NotifyPropertyChanged(nameof(FontStyle)); } } = FontStyle.Normal;
+   public TextAlignment TextAlignment { get; set { field = value; NotifyPropertyChanged(nameof(TextAlignment)); } } = TextAlignment.Left;
+   public VerticalAlignment VerticalAlignment { get; set { field = value; NotifyPropertyChanged(nameof(VerticalAlignment)); } } = VerticalAlignment.Top;
+     
+   public IBrush SelectionBrush { get; set { field = value; NotifyPropertyChanged(nameof(SelectionBrush)); } } = LightBlueBrush;
    internal static SolidColorBrush LightBlueBrush = new(Colors.LightBlue);
 
    internal double DistanceSelectionEndFromLeft = 0;
@@ -86,31 +67,23 @@ public class Paragraph : Block
    internal bool IsStartAtLastLine = false;
    internal bool IsEndAtLastLine = false;
 
-   private bool _RequestInlinesUpdate;
-   internal bool RequestInlinesUpdate { get => _RequestInlinesUpdate; set { _RequestInlinesUpdate = value; NotifyPropertyChanged(nameof(RequestInlinesUpdate)); } }
-
-   private bool _RequestInvalidateVisual;
-   internal bool RequestInvalidateVisual { get => _RequestInvalidateVisual; set { _RequestInvalidateVisual = value; NotifyPropertyChanged(nameof(RequestInvalidateVisual)); } }
-
-   private bool _RequestTextLayoutInfoStart;
-   internal bool RequestTextLayoutInfoStart { get => _RequestTextLayoutInfoStart; set { _RequestTextLayoutInfoStart = value; NotifyPropertyChanged(nameof(RequestTextLayoutInfoStart)); } }
-
-   private bool _RequestTextLayoutInfoEnd;
-   internal bool RequestTextLayoutInfoEnd { get => _RequestTextLayoutInfoEnd; set { _RequestTextLayoutInfoEnd = value; NotifyPropertyChanged(nameof(RequestTextLayoutInfoEnd)); } }
-
-   private bool _RequestTextBoxFocus;
-   public bool RequestTextBoxFocus { get => _RequestTextBoxFocus; set { _RequestTextBoxFocus = value; NotifyPropertyChanged(nameof(RequestTextBoxFocus)); } }
-
-   //private int _RequestRectOfCharacterIndex;
-   //public int RequestRectOfCharacterIndex { get => _RequestRectOfCharacterIndex; set { _RequestRectOfCharacterIndex = value; NotifyPropertyChanged(nameof(RequestRectOfCharacterIndex)); } }
-
+   internal bool RequestInlinesUpdate { get; set { field = value; NotifyPropertyChanged(nameof(RequestInlinesUpdate)); } } = false;
+   internal bool RequestInvalidateVisual { get; set { field = value; NotifyPropertyChanged(nameof(RequestInvalidateVisual)); } } = false;
+   internal bool RequestTextLayoutInfoStart { get; set { field = value; NotifyPropertyChanged(nameof(RequestTextLayoutInfoStart)); } } = false;
+   internal bool RequestTextLayoutInfoEnd { get; set { field = value; NotifyPropertyChanged(nameof(RequestTextLayoutInfoEnd)); } } = false;
+   public bool RequestTextBoxFocus { get; set { field = value; NotifyPropertyChanged(nameof(RequestTextBoxFocus)); } } = false;
+     
    internal void CallRequestTextBoxFocus() { RequestTextBoxFocus = true; RequestTextBoxFocus = false; }
    internal void CallRequestInvalidateVisual() { RequestInvalidateVisual = true; RequestInvalidateVisual = false; }
    internal void CallRequestInlinesUpdate() { RequestInlinesUpdate = true; RequestInlinesUpdate = false; }
    internal void CallRequestTextLayoutInfoStart() { RequestTextLayoutInfoStart = true; RequestTextLayoutInfoStart = false; }
    internal void CallRequestTextLayoutInfoEnd() { RequestTextLayoutInfoEnd = true; RequestTextLayoutInfoEnd = false; }
-   //internal void CallRequestTextLayoutInfoStart() { RequestTextLayoutInfoStart = false; RequestTextLayoutInfoStart = true; }
-   //internal void CallRequestTextLayoutInfoEnd() { RequestTextLayoutInfoEnd = false; RequestTextLayoutInfoEnd = true; }
+
+   internal void EnsureProperEnd()
+   {
+      if (SelectionEndInBlock < SelectionStartInBlock)
+         SelectionStartInBlock = SelectionEndInBlock;
+   }
 
    internal void UpdateEditableRunPositions()
    {
@@ -122,22 +95,13 @@ public class Paragraph : Block
       }
    }
 
-   internal void UpdateUIContainersSelected()
+   internal void UpdateUIContainersSelected(int start, int end)
    {
       if (this.Inlines != null)
       {
-
-         IEditable? startInline = Inlines.FirstOrDefault(il => il.IsStartInline);
-         IEditable? endInline = Inlines.FirstOrDefault(il => il.IsEndInline);
-         foreach (EditableInlineUIContainer iuc  in this.Inlines.OfType<EditableInlineUIContainer>())
-         {
-            int stidx = startInline == null ? -1 : this.Inlines.IndexOf(startInline);
-            int edidx = endInline == null ? Int32.MaxValue : this.Inlines.IndexOf(endInline);
-            int thisidx = this.Inlines.IndexOf(iuc);
-            iuc.IsSelected = (thisidx > stidx && thisidx < edidx);
-         }
+         foreach (EditableInlineUIContainer iuc in Inlines.OfType<EditableInlineUIContainer>())
+            iuc.IsSelected = (iuc.TextPositionOfInlineInParagraph >= start && iuc.TextPositionOfInlineInParagraph < end);
       }
-
    }
 
    internal bool RemoveEmptyInlines()
@@ -152,25 +116,7 @@ public class Paragraph : Block
 
    internal Paragraph PropertyClone()
    {
-      return new Paragraph() 
-      { 
-         TextAlignment = this.TextAlignment,
-         LineSpacing = this.LineSpacing,
-         BorderBrush = this.BorderBrush,
-         BorderThickness = this.BorderThickness,
-         LineHeight = this.LineHeight,
-         Margin= this.Margin,
-         Background = this.Background,
-         FontFamily = this.FontFamily,
-         FontSize = this.FontSize,
-         FontStyle = this.FontStyle,
-         FontWeight = this.FontWeight
-      }; 
-   }
-
-   internal Paragraph FullClone()
-   {
-      return new Paragraph() 
+      return new Paragraph(MyFlowDoc) 
       { 
          TextAlignment = this.TextAlignment,
          LineSpacing = this.LineSpacing,
@@ -183,10 +129,34 @@ public class Paragraph : Block
          FontSize = this.FontSize,
          FontStyle = this.FontStyle,
          FontWeight = this.FontWeight,
-         Inlines = new ObservableCollection<IEditable>(this.Inlines.Select(il=>il.Clone()))
       }; 
    }
 
-   
+   internal Paragraph FullClone()
+   {
+      Paragraph newPar = new(this.MyFlowDoc) 
+      { 
+         Id = this.Id,
+         StartInDoc = this.StartInDoc,
+         TextAlignment = this.TextAlignment,
+         LineSpacing = this.LineSpacing,
+         BorderBrush = this.BorderBrush,
+         BorderThickness = this.BorderThickness,
+         LineHeight = this.LineHeight,
+         Margin= this.Margin,
+         Background = this.Background,
+         FontFamily = this.FontFamily,
+         FontSize = this.FontSize,
+         FontStyle = this.FontStyle,
+         FontWeight = this.FontWeight,
+      };
 
+      
+      newPar.Inlines.CollectionChanged += Inlines_CollectionChanged;
+      newPar.Inlines.AddRange(this.Inlines.Select(il => il.CloneWithId()));
+            
+      return newPar;
+   }
+
+ 
 }

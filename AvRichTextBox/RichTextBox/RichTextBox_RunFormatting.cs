@@ -1,19 +1,17 @@
 ﻿using Avalonia.Controls;
-using Avalonia.Input;
-using DocumentFormat.OpenXml.VariantTypes;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using RtfDomParser;
-using System.Linq;
-using System.Threading.Tasks;
+using Avalonia.Media;
+using RtfDomParserAv;
 using static AvRichTextBox.FlowDocument;
 
 namespace AvRichTextBox;
 
 public partial class RichTextBox
 {
-    
+
+   private static ScaleTransform strans = new(0.75, 0.75);
+   internal static TransformGroup SubscriptTG = new();
+   internal static TransformGroup SuperscriptTG = new();
+
    private void ToggleItalics()
    {
       if (IsReadOnly) return;
@@ -35,9 +33,11 @@ public partial class RichTextBox
 
    }
 
+   
    private void CopyToClipboard()
    {      
-      
+      if (DisableUserCopy) return;
+
       var dataObject = new DataObject();
 
       //create rtf string
@@ -74,7 +74,7 @@ public partial class RichTextBox
             dom.LoadRTFText(rtfstring);
             List<IEditable> insertInlines = RtfConversions.GetInlinesFromRtf(dom);
             insertInlines.Reverse();
-            int addedchars = FlowDoc.SetRangeToInlines(FlowDoc.Selection, insertInlines);
+            int addedchars = FlowDoc.PasteInlinesIntoRange(FlowDoc.Selection, insertInlines);
 
             newSelPoint = Math.Min(newSelPoint + addedchars, FlowDoc.DocEndPoint - 1);
 
@@ -83,16 +83,14 @@ public partial class RichTextBox
       }
       else if (formats.Contains("Text"))
       {
-         object? textobj = await TopLevel.GetTopLevel(this)!.Clipboard!.GetDataAsync("Text");
-
-         if (textobj != null)
+         if (await TopLevel.GetTopLevel(this)!.Clipboard!.GetDataAsync("Text") is object textobj)
          {
-            string pasteText = textobj.ToString()!;
-            FlowDoc.SetRangeToText(FlowDoc.Selection, pasteText);
-
-            newSelPoint = Math.Min(newSelPoint + pasteText.Length, FlowDoc.DocEndPoint - 1);
-
-            TextPasted = true;
+            if (textobj.ToString() is string pasteText)
+            {
+               FlowDoc.SetRangeToText(FlowDoc.Selection, pasteText);
+               newSelPoint = Math.Min(newSelPoint + pasteText.Length, FlowDoc.DocEndPoint - 1);
+               TextPasted = true;
+            }
          }
       }
       

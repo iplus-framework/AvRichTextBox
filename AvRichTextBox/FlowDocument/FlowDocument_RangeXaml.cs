@@ -10,17 +10,18 @@ public partial class FlowDocument
    public void SaveRangeToXamlStream(TextRange trange, Stream stream)
    {
       StringBuilder rangeXamlBuilder = new(SectionTextDefault);
-      rangeXamlBuilder.Append(GetParagraphRunsXaml(CreateNewInlinesForRange(trange), false));
+      (int idLeft, int idRight) edgeIds;
+      rangeXamlBuilder.Append(GetParagraphRunsXaml(GetRangeInlinesAndAddToDoc(trange, out edgeIds), false));
       rangeXamlBuilder.Append("</Section>");
       byte[] stringBytes = Encoding.UTF8.GetBytes(rangeXamlBuilder.ToString());
       stream.Write(stringBytes, 0, stringBytes.Length);
 
    }
 
-   internal void LoadXamlStreamIntoRange (Stream stream, TextRange trange)
+   internal static void LoadXamlStreamIntoRange (Stream stream, TextRange trange)
    {
       byte[] streamBytes = new byte[stream.Length];
-      stream.Read(streamBytes, 0, streamBytes.Length);
+      stream.ReadExactly(streamBytes);
       string xamlString = Encoding.UTF8.GetString(streamBytes, 0, streamBytes.Length);
       //ProcessXamlString(xamlString);
 

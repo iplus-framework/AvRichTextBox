@@ -1,11 +1,7 @@
-﻿using Avalonia;
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Linq;
+﻿using System.ComponentModel;
 using System.Reactive.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
+using System.Text;
 
 namespace AvRichTextBox;
 
@@ -14,67 +10,156 @@ public class Block : INotifyPropertyChanged
    public event PropertyChangedEventHandler? PropertyChanged;
    public void NotifyPropertyChanged([CallerMemberName] String propertyName = "") { PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName)); }
 
-   private Thickness _Margin = new (0, 0, 0, 0);
-   public Thickness Margin { get => _Margin; set { _Margin = value; NotifyPropertyChanged(nameof(Margin)); } }
+   internal int Id = 0;
+
+   internal bool IsTableCellBlock = false;
+   internal Table OwningTable = null!;
+   internal Cell OwningCell = null!;
+
+   internal FlowDocument MyFlowDoc
+   {
+      get;
+      set
+      {
+         field = value;
+         if (this is Paragraph p)
+         {
+            foreach (IEditable ied in p.Inlines)
+               ied.MyFlowDoc = value;
+         }
+      }
+   } = null!;
+
+   public Thickness Margin { get; set { field = value; NotifyPropertyChanged(nameof(Margin)); } }
 
    public string Text
    {
       get
       {
-         string returnText = "";
-
-         switch (this.GetType())
+         switch (this)
          {
-            case Type t when t == typeof(Paragraph):
-               returnText = string.Join("", ((Paragraph)this).Inlines.ToList().ConvertAll(ied => ied.InlineText));
-               break;
-               //case Type t when t == typeof(Table):
-               //   returnText = "$";
-               //   break;
+            case Paragraph p:
+
+               var sb = new StringBuilder();
+               foreach (var i in p.Inlines)
+                  sb.Append(i.InlineText);
+
+               if (p.IsTableCellBlock)
+                  sb.Append((char)7);
+
+               return sb.ToString();
+
+            case Table t:
+
+               var sbTable = new StringBuilder();
+               foreach (Cell c in t.Cells)
+                  sbTable.Append(c.CellContent.Text);
+               return sbTable.ToString();
+
+            default:
+               return "";
          }
-         return returnText;
       }
    }
 
-   public bool IsParagraph => this.GetType() == typeof(Paragraph);
-   //public bool IsTable => this.GetType() == typeof(Table);
+   public int TextLength 
+   { 
+      get
+      {
+         switch (this)
+         {
+            case Paragraph p:
+               int len = 0;
+               foreach (var i in p.Inlines)
+                  len += i.InlineText?.Length ?? 0;
+
+               if (p.IsTableCellBlock)
+                  len += 1;
+
+               return len;
+
+            case Table t:
+
+               int lenTable = 0;
+               foreach (Cell c in t.Cells)
+                  lenTable += c.CellContent.Text.Length;
+               return lenTable;
+
+            default:
+
+               return 0;
+         }
+      } 
+   }
 
    internal int SelectionLength => SelectionEndInBlock - SelectionStartInBlock;
-   public int BlockLength => this.IsParagraph ? ((Paragraph)this).Inlines.ToList().Sum(il => il.InlineLength) + 1 : 1;  //Add one for paragraph itself
-
-   private int _StartInDoc = 0;
-   internal int StartInDoc
+   
+   public int BlockLength  
    {
-      get => _StartInDoc;
-      set { if (_StartInDoc != value) { _StartInDoc = value; NotifyPropertyChanged(nameof(StartInDoc)); } }
-   }
-
-   internal int EndInDoc => StartInDoc + BlockLength;
-
-   private int _SelectionStartInBlock;
-   public int SelectionStartInBlock
-   {
-      get => _SelectionStartInBlock;
-      set { if (_SelectionStartInBlock != value) { _SelectionStartInBlock = value; NotifyPropertyChanged(nameof(SelectionStartInBlock)); } }
-   }
-
-   private int _SelectionEndInBlock;
-   public int SelectionEndInBlock
-   {
-      get => _SelectionEndInBlock;
-      set
+      get
       {
-
-         if (_SelectionEndInBlock != value)
+         int returnLength = 0;
+         switch (this)
          {
-            _SelectionEndInBlock = value; // Set the correct value
-            NotifyPropertyChanged(nameof(SelectionEndInBlock));
+            case Paragraph p:
+               returnLength = p.Inlines.ToList().Sum(il => il.InlineLength) + 1; 
+               
+               if (p.IsTableCellBlock)
+                  returnLength += 1;  //char7
+
+               break;
+
+            case Table t:
+
+               foreach (Cell c in t.Cells)
+               {
+                  if (c.CellContent is Paragraph cellPar)
+                     returnLength += cellPar.BlockLength;
+               }
+               returnLength += 0; // need table final char? 
+               break;
          }
 
+         return returnLength;
       }
-
+      
    }
 
+   internal int StartInDoc { get; set { if (field != value) { field = value; NotifyPropertyChanged(nameof(StartInDoc)); } } }
+   internal int EndInDoc => StartInDoc + BlockLength;
+
+   //Bound to SelectableTextBlock SelectionStart/SelectionEnd (visual selection):
+   public int SelectionStartInBlock 
+   { 
+      get; 
+      set 
+      { 
+         if (field != value) 
+         { 
+            field = value; 
+            NotifyPropertyChanged(nameof(SelectionStartInBlock)); 
+            if (this.IsTableCellBlock)
+               this.OwningCell.Selected = SelectionStartInBlock == 0 && SelectionEndInBlock == BlockLength - 1;  // later add chr(7) for cells
+            
+         } 
+      }
+   }
+
+   public int SelectionEndInBlock 
+   { 
+      get; 
+      set 
+      {  
+         if (field != value) 
+         { 
+            field = value; 
+            NotifyPropertyChanged(nameof(SelectionEndInBlock));
+            if (this.IsTableCellBlock)
+               this.OwningCell.Selected = SelectionStartInBlock == 0 && SelectionEndInBlock == BlockLength - 1;  // later add chr(7) for cells
+         }  
+      }  
+   }
+   
 
    public static bool IsFocusable => false;
 

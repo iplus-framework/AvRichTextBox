@@ -1,28 +1,28 @@
 using DocumentFormat.OpenXml.Packaging;
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.Text.RegularExpressions;
-using static AvRichTextBox.WordConversions;
-using static AvRichTextBox.RtfConversions;
-using static AvRichTextBox.XamlConversions;
-using RtfDomParser;
-using System.Text;
 using HtmlAgilityPack;
+using RtfDomParserAv;
+using System.Text;
+using System.Text.RegularExpressions;
+using static AvRichTextBox.RtfConversions;
+using static AvRichTextBox.WordConversions;
+using static AvRichTextBox.XamlConversions;
 
 namespace AvRichTextBox;
 
 public partial class FlowDocument
 {
-	internal void LoadRtf(string rtfContent)
-	{
-		RTFDomDocument rtfdom = new();
+   [GeneratedRegex("\\\\o \".*?\"")]
+   private static partial Regex RemoveOverstrikeRegex();
 
-		// Do this to fix malformed `\o "` and orphaned quotes
+   internal void LoadRtf(string rtfContent)
+	{
+      RTFDomDocument rtfdom = new();
+
+		// Do this to fix malformed `\o "` (overstrike) with/without orphaned quotes (old rtf feature that can break parsing)
 		if (rtfContent.Contains("\\o "))
 		{
 			rtfContent = rtfContent.Replace("\\o \"}", "\\o \"\"}").Replace(" \"}", " }");
-			rtfContent = Regex.Replace(rtfContent, "\\\\o \".*?\"", "\\o\"\"");
+			rtfContent = RemoveOverstrikeRegex().Replace(rtfContent, "\\o\"\"");
 		}
 		using MemoryStream rtfStream = new(Encoding.UTF8.GetBytes(rtfContent));
 		using StreamReader streamReader = new(rtfStream);
@@ -89,7 +89,8 @@ public partial class FlowDocument
 
 	internal void LoadXaml(string xamlContent)
 	{
-		ProcessXamlString(xamlContent, this);
+      ClearDocument();
+      ProcessXamlString(xamlContent, this);
 		InitializeDocument();
 	}
 
@@ -106,9 +107,10 @@ public partial class FlowDocument
 	}
 
 	internal void LoadHtmlDocFromFile(string fileName)
-	{
-		try
+	{  
+      try
 		{
+
 			LoadHtml(File.ReadAllText(fileName));
 		}
 		catch (Exception ex3)
@@ -166,7 +168,9 @@ public partial class FlowDocument
 	internal void LoadXamlPackage(string fileName)
 	{
 
-		XamlConversions.LoadXamlPackage(fileName, this);
+      ClearDocument();
+
+      XamlConversions.LoadXamlPackage(fileName, this);
 
 		InitializeDocument();
 
@@ -177,6 +181,7 @@ public partial class FlowDocument
 	{
 		XamlConversions.SaveXamlPackage(fileName, this);
 	}
+
 
 }
 

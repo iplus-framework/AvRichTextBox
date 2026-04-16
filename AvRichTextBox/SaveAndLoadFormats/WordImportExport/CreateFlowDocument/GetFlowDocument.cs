@@ -1,8 +1,6 @@
-﻿using Avalonia;
-using Avalonia.Media;
+﻿using Avalonia.Media;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
-using System;
 using System.Diagnostics;
 using System.Linq;
 using static AvRichTextBox.HelperMethods;
@@ -30,8 +28,7 @@ internal static partial class WordConversions
          // '    foreach (DocumentVariable docVar in docVars)
          //mainDocPart.DocumentSettingsPart.Settings
 
-         //StyleDefinitionsPart? styles = mainDocPart.StyleDefinitionsPart!;
-         //if (styles != null)
+         //if (mainDocPart.StyleDefinitionsPart is StyleDefinitionsPart styles)
          //{
          //   var defParProps = styles.Styles!.DocDefaults!.ParagraphPropertiesDefault;
 
@@ -62,9 +59,8 @@ internal static partial class WordConversions
 
          fdoc.PagePadding = new Thickness(50); //set a small default padding
 
-         DocumentFormat.OpenXml.Wordprocessing.PageMargin? pMarg = mainDocPart.Document.Descendants<DocumentFormat.OpenXml.Wordprocessing.PageMargin>().FirstOrDefault()!;
-
-         if (pMarg != null)
+         DocumentFormat.OpenXml.Wordprocessing.PageMargin pMarg = mainDocPart.Document.Descendants<DocumentFormat.OpenXml.Wordprocessing.PageMargin>().FirstOrDefault() is DocumentFormat.OpenXml.Wordprocessing.PageMargin pmargin ? pmargin : null!;
+         if ( pMarg != null ) 
          {
             double docmargT = TwipToPix(Convert.ToDouble((int)pMarg.Top!));
             double docmargR = TwipToPix(Convert.ToDouble((uint)pMarg.Right!));
@@ -81,9 +77,7 @@ internal static partial class WordConversions
          //}
 
 
-         OpenXmlElement? docBody = mainDocPart.Document.Body!;
-
-         if (docBody != null)
+         if (mainDocPart.Document.Body is OpenXmlElement docBody)
          {
             foreach (OpenXmlElement section in docBody.Elements())
             {  //MessageBox.Show(section.LocalName);
@@ -123,10 +117,10 @@ internal static partial class WordConversions
 
                   case "tbl":
 
-                     //DocumentFormat.OpenXml.Wordprocessing.Table wtable = (DocumentFormat.OpenXml.Wordprocessing.Table)section;
+                     DocumentFormat.OpenXml.Wordprocessing.Table wtable = (DocumentFormat.OpenXml.Wordprocessing.Table)section;
 
-                     //System.Windows.Documents.Table newTable = GetTable(wtable);
-                     ////System.Windows.Documents.Table newTable = GetTable(section);
+                     Table newTable = GetTable(wtable, fdoc);
+                     //System.Windows.Documents.Table newTable = GetTable(section);
 
                      //foreach (TableRow tr in newTable.RowGroups[0].Rows)
                      //{
@@ -139,14 +133,14 @@ internal static partial class WordConversions
                      //   }
                      //}
 
-                     //fdoc.Blocks.Add(newTable);
+                     fdoc.Blocks.Add(newTable);
                      break;
 
                   case "p":
 
                      try
                      {
-                        Paragraph para = GetParagraph(section);
+                        Paragraph para = GetParagraph(section, fdoc);
                         //para.FontFamily = fdoc.FontFamily;
                         para.Margin = new Thickness(0);
                         if (para.Inlines.Count == 0)

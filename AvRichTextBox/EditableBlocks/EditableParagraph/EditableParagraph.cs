@@ -1,81 +1,68 @@
-﻿using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Input;
+﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
-using System;
-using System.Linq;
 
 namespace AvRichTextBox;
 
-public partial class EditableParagraph : SelectableTextBlock
+internal partial class EditableParagraph : SelectableTextBlock
 {
-   public bool IsEditable { get; set; } = true;
-
-   private readonly SolidColorBrush caretBrush = new (Colors.Cyan, 0.55);
-
-   public int RectCharacterIndex = 0;
-   
-   public EditableParagraph()
-   {
-      this.SelectionBrush = caretBrush;
-
-      this.Loaded += EditableParagraph_Loaded;
-
-      this.PropertyChanged += EditableParagraph_PropertyChanged;
-
-      //this.KeyDown += EditableParagraph_KeyDown;
-
-   }
-
-   private void EditableParagraph_Loaded(object? sender, RoutedEventArgs e)
-   {
-      UpdateInlines();
-            
-   }
-
    public static readonly StyledProperty<bool> TextLayoutInfoStartRequestedProperty = AvaloniaProperty.Register<EditableParagraph, bool>(nameof(TextLayoutInfoStartRequested));
    public bool TextLayoutInfoStartRequested { get => GetValue(TextLayoutInfoStartRequestedProperty); set { SetValue(TextLayoutInfoStartRequestedProperty, value); } }
 
    public static readonly StyledProperty<bool> TextLayoutInfoEndRequestedProperty = AvaloniaProperty.Register<EditableParagraph, bool>(nameof(TextLayoutInfoEndRequested));
    public bool TextLayoutInfoEndRequested { get => GetValue(TextLayoutInfoEndRequestedProperty); set { SetValue(TextLayoutInfoEndRequestedProperty, value); } }
+
+   public bool IsEditable { get; set; } = true;
+
+   public int SelectionLength => SelectionEnd - SelectionStart;
+
+   Paragraph? ThisPar => this.DataContext as Paragraph;
+
+   public int RectCharacterIndex = 0;
    
-   public void UpdateVMFromEPStart()
+   public EditableParagraph()
    {
-      SelectionStartRect_Changed?.Invoke(this);
-      this.SetValue(TextLayoutInfoStartRequestedProperty, false);
+      this.Loaded += EditableParagraph_Loaded;
+      this.PropertyChanged += EditableParagraph_PropertyChanged;
+
+      FontFeatures = [ new FontFeature { Tag = "liga", Value = 0 } ]; // fix wrong hit testing with some font/letter combinations
+
+      //this.KeyDown += EditableParagraph_KeyDown;
+   }
+
+   private void EditableParagraph_Loaded(object? sender, RoutedEventArgs e)
+   {
+      UpdateInlines();
       
+      if (this.DataContext is not Paragraph thisPar) return;
+
+      if (Inlines?.Count == 0)
+         thisPar.Inlines.Add(new EditableRun(""));
+
+      List<int> lineBreakIndexes = Inlines.OfType<EditableLineBreak>().ToList().ConvertAll(elb => Inlines.IndexOf(elb));
+      for (int idx = lineBreakIndexes.Count - 1; idx >= 0; idx--)
+      {
+         int elbIdx = lineBreakIndexes[idx];
+         if (elbIdx == 0 || (Inlines[elbIdx - 1] is EditableRun erun && erun.Text != ""))
+            thisPar.Inlines.Insert(elbIdx + 1, new EditableRun(""));
+      }
+      thisPar.UpdateEditableRunPositions();
+      UpdateInlines();
+
    }
-
-   public void UpdateVMFromEPEnd()
-   {
-      SelectionEndRect_Changed?.Invoke(this);
-      this.SetValue(TextLayoutInfoEndRequestedProperty, false);
-   }
-
-   //public void NotifyCharIndexRect(EditableParagraph ep, Rect selEndRect)
-   //{
-
-   //   if (CharIndexRect_Notified != null)
-   //      CharIndexRect_Notified(ep, selEndRect);
-   //}
-
-
+     
    private void EditableParagraph_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-   {
-      
+   {      
       //Debug.WriteLine("e.propertyName = " + e.Property.Name);
 
-      if (thisPar != null)  //because this may be called right after paragraph has been deleted
+      if (ThisPar != null)  //because this may be called right after paragraph has been deleted
       {
-
          switch (e.Property.Name)
          {
             case "Bounds":
                //Necessary for initial setting for each created paragraph
-               if (thisPar != null)
-                  thisPar.FirstIndexLastLine = this.TextLayout.TextLines[^1].FirstTextSourceIndex;
+               ThisPar.FirstIndexLastLine = this.TextLayout.TextLines[^1].FirstTextSourceIndex;
                break;
 
             //case "Inlines":
@@ -89,7 +76,7 @@ public partial class EditableParagraph : SelectableTextBlock
                if (TextLayout != null && TextLayout.TextLines.Count > 0)
                {
                   double maxLineHeight = Math.Max(TextLayout.TextLines[0].Height, TextLayout.TextLines[^1].Height);
-                  thisPar.LineHeight = maxLineHeight;
+                  ThisPar.LineHeight = maxLineHeight;
                }
                //Debug.WriteLine("\nline spacing changed: LINESpacing = " + this.LineSpacing);
 
@@ -104,13 +91,12 @@ public partial class EditableParagraph : SelectableTextBlock
                break;
 
             case "SelectedText":
-               thisPar.UpdateUIContainersSelected();
-
+               ThisPar.UpdateUIContainersSelected(SelectionStart, SelectionEnd);  // changes image opacity to visualize its selection
                break;
 
             case "TextLayoutInfoStartRequested":
                this.SetValue(TextLayoutInfoStartRequestedProperty, false);
-               if (thisPar == null)
+               if (ThisPar == null)
                   Dispatcher.UIThread.Post(() => UpdateVMFromEPStart(), DispatcherPriority.Background);
                 else
                   UpdateVMFromEPStart();
@@ -118,7 +104,7 @@ public partial class EditableParagraph : SelectableTextBlock
 
             case "TextLayoutInfoEndRequested":
                this.SetValue(TextLayoutInfoEndRequestedProperty, false);
-               if (thisPar == null)
+               if (ThisPar == null)
                   Dispatcher.UIThread.Post(() => UpdateVMFromEPEnd(), DispatcherPriority.Background);
                else   
                   UpdateVMFromEPEnd();
@@ -129,17 +115,13 @@ public partial class EditableParagraph : SelectableTextBlock
 
    }
 
-   protected override void OnPointerPressed(PointerPressedEventArgs e)
-   {
-      //Prevent default behavior
-
-
-   }
+   protected override void OnPointerPressed(PointerPressedEventArgs e) { /*Prevent default behavior*/  }
+   protected override void OnPointerReleased(PointerReleasedEventArgs e) { /* Prevent default behavior*/ }
 
    protected override void OnKeyDown(KeyEventArgs e)
    {
-      //Keep to override
-      //Debug.WriteLine("thisEP focused = " + this.IsFocused);
+      //Keep to override default behavior
+      
       //if (!this.IsFocused)
       //   e.Handled = true;
       //UpdateVMFromEPEnd();
@@ -157,47 +139,28 @@ public partial class EditableParagraph : SelectableTextBlock
       this.Focusable = true;
    }
    
-
    protected override void OnPointerMoved(PointerEventArgs e)
    {
-      //e.Handled = true;
-
       TextHitTestResult result = this.TextLayout.HitTestPoint(e.GetPosition(this));
-
       MouseMove?.Invoke(this, result.TextPosition);
-
    }
 
-   protected override void OnPointerReleased(PointerReleasedEventArgs e)
+ 
+   public new string Text => this.DataContext is Paragraph p ? string.Join("", p.Inlines.ToList().ConvertAll(edinline => edinline.InlineText)) : "";
+
+   public int TextLength
    {
-      // Prevent default behavior
-      //e.Handled = true;
+      get
+      {
+         int len = 0;
+         if (this.DataContext is Paragraph p)
+         {
+            foreach (var i in p.Inlines)
+               len += i.InlineText?.Length ?? 0;
+         }
+         return len;
+      }
    }
-
-   internal void UpdateInlines()
-   {
-
-      if (((Paragraph)this.DataContext!).Inlines != null)
-         this.Inlines = GetFormattedInlines();
-
-      //foreach (Inline thisIL in this.Inlines!)
-      //   Debug.WriteLine("1:\n" + ((Run)thisIL).Text + " ::: " + thisIL.FontWeight);
-
-      //this.Height = this.Inlines[0].get
-
-
-      this.InvalidateMeasure();
-      this.InvalidateVisual();
-
-   }
-
-   public int SelectionLength => SelectionEnd - SelectionStart;
-
-   Paragraph? thisPar => this.DataContext as Paragraph;
-
-  
-   public new string Text => string.Join("", ((Paragraph)this.DataContext!).Inlines.ToList().ConvertAll(edinline => edinline.InlineText));
-
 
 }
 

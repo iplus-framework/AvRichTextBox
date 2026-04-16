@@ -40,17 +40,28 @@ public partial class MainWindow : Window
    {
       MainRTB.FlowDocument.Selection_Changed += FlowDocument_Selection_Changed;
 
-      progChange = false;
+#if DEBUG
+      
+      DockPanel debugCBPanel = new () { VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom };
+      TextBlock debugTB = new () { Text = "DebugPanel" };
+      CheckBox debugCB = new() { Focusable = false };
+      debugCB.IsCheckedChanged += DebugPanelCB_CheckedUnchecked;
+      debugCB.IsChecked = true;
+      debugCBPanel.Children.Add(debugTB);
+      debugCBPanel.Children.Add(debugCB);
+      DockPanel.SetDock(debugTB, Dock.Top);
+      TopStackPanel.Children.Add(debugCBPanel);
+      
+#endif
 
-      ////Temp debugging
-      //string testLocation = Path.Combine(AppContext.BaseDirectory, "TestFiles");
-      //MainRTB.LoadWordDoc(Path.Combine(testLocation, "TestDocumentWord.docx"));
+      progChange = false;
+            
 
    }
 
    private void CreateNewDocumentMenuItem_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
    {
-      MainRTB.CloseDocument();
+      MainRTB.CreateNewDocument();
       
    }
 
@@ -72,11 +83,18 @@ public partial class MainWindow : Window
          PerformFind();
          e.Handled = true;
       }
+         
    }
 
    private void FindTextBox_GotFocus(object? sender, Avalonia.Input.GotFocusEventArgs e)
    {
       FindTB.Background = Brushes.White;
+      this.FindTB.Focus();
+   }
+
+   private void FindTextBox_LostFocus(object? sender, Avalonia.Input.GotFocusEventArgs e)
+   {
+      FindTB.Background = Brushes.LightGray;
       
    }
 
@@ -92,7 +110,7 @@ public partial class MainWindow : Window
 
       if (string.IsNullOrEmpty(FindTB.Text)) return;
 
-      MatchCollection foundMatches = Regex.Matches(MainRTB.FlowDocument.Text, FindTB.Text);
+      MatchCollection foundMatches = Regex.Matches(MainRTB.FlowDocument.Text.Replace("\r\n", "\r"), FindTB.Text);  
       Match? firstMatch = foundMatches.FirstOrDefault(m => m.Index >= MainRTB.FlowDocument.Selection.End);
       if (firstMatch != null)
       {
@@ -146,8 +164,8 @@ public partial class MainWindow : Window
          FontsCB.SelectedItem = ffamily.ToString();
       }
 
-      Paragraph? selPar = selection.GetStartPar();
-      if (selPar != null && !progChange)
+      if (selection.GetStartPar() is not Paragraph selPar) return;
+      if (!progChange)
       {
          progChange = true;
          LineSpacingNS.Value = selPar.LineSpacing;
@@ -209,13 +227,13 @@ public partial class MainWindow : Window
       MainRTB.FlowDocument.Selection.ApplyFormatting(BackgroundProperty, hBrush);
    }
 
+#if DEBUG
    private void DebugPanelCB_CheckedUnchecked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
    {
-      CheckBox? thisCB = sender as CheckBox;
-      if (thisCB != null && MainRTB != null)
-         //MainRTB.ToggleDebuggerPanel((bool)thisCB.IsChecked!);
-         MainRTB.ShowDebuggerPanelInDebugMode = (bool)thisCB.IsChecked!;
+      if (sender is CheckBox thisCB && MainRTB != null)
+         MainRTB.ShowDebuggerPanelInDebugMode = thisCB.IsChecked is bool b && b;
    }
+#endif
 
    private void FontsComboBox_DropDownClosed(object? sender, System.EventArgs e)
    {

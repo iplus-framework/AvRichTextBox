@@ -286,23 +286,15 @@ internal static partial class WordConversions
 
                            case "sz":
 
-
                               thisRun.FontSize = PointsToPixels(Convert.ToDouble(rprsection.GetAttributes()[0].Value));
-                              if (thisRun.BaselineAlignment == BaselineAlignment.Subscript | ((EditableRun)iline).BaselineAlignment == BaselineAlignment.TextTop)
-                                 thisRun.FontSize /= 3;
-                              else
-                                 thisRun.FontSize /= 2;
+                              thisRun.FontSize /= 2;
                               break;
 
 
                            case "szCs":
 
-
                               thisRun.FontSize = PointsToPixels(Convert.ToDouble(rprsection.GetAttributes()[0].Value));
-                              if (thisRun.BaselineAlignment == BaselineAlignment.Subscript | thisRun.BaselineAlignment == BaselineAlignment.TextTop)
-                                 thisRun.FontSize /= 3;
-                              else
-                                 thisRun.FontSize /= 2;
+                              thisRun.FontSize /= 2;
                               break;
 
 
@@ -345,25 +337,22 @@ internal static partial class WordConversions
                               {
                                  case "subscript":
                                     thisRun.BaselineAlignment = BaselineAlignment.Subscript;
-                                    thisRun.FontSize /= 1.5;
                                     break;
 
                                  case "superscript":
-                                    thisRun.BaselineAlignment = BaselineAlignment.Top;
-                                    thisRun.FontSize /= 1.5;
+                                    thisRun.BaselineAlignment = BaselineAlignment.Superscript;
                                     break;
 
                                  default:
                                     thisRun.BaselineAlignment = BaselineAlignment.Baseline;
                                     break;
-
                               }
 
                               break;
                         }
 
                      }
-                     catch (Exception rprEx) { Debug.WriteLine("Error getting run properties:\nLocalName=" + rprsection.LocalName + "\n" + rprEx.Message); }
+                     catch (Exception rprEx) { Debug.WriteLine($"Error getting run properties:\nLocalName={rprsection.LocalName}\n{rprEx.Message}"); }
                   }
 
                   break;
@@ -385,7 +374,7 @@ internal static partial class WordConversions
                   break;
 
                case "t": {  thisrun.Text += rsection.InnerText; break; }
-               //case "t": { thisrun.Text += rsection.InnerText; lastRunText = thisrun.Text; break; }  //For debugging purposes
+               //case "t": { thisrun.GetText += rsection.InnerText; lastRunText = thisrun.GetText; break; }  //For debugging purposes
 
                case "delText": { thisrun.Text += rsection.InnerText; thisrun.TextDecorations = TextDecorations.Strikethrough; thisrun.Foreground = Brushes.Red; break; }
 
@@ -397,7 +386,7 @@ internal static partial class WordConversions
             }
 
          }
-         catch (Exception ex) { Debug.WriteLine("Error getting run:\nLocalName=" + rsection.LocalName + "\n" + ex.Message); }
+         catch (Exception ex) { Debug.WriteLine($"Error getting run:\nLocalName={rsection.LocalName}\n{ex.Message}"); }
 
       }
 
