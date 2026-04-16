@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -25,6 +26,8 @@ internal partial class EditableParagraph : SelectableTextBlock
    {
       this.Loaded += EditableParagraph_Loaded;
       this.PropertyChanged += EditableParagraph_PropertyChanged;
+      this.GotFocus += EditableParagraph_GotFocus;
+      this.LostFocus += EditableParagraph_LostFocus;
 
       FontFeatures = [ new FontFeature { Tag = "liga", Value = 0 } ]; // fix wrong hit testing with some font/letter combinations
 
@@ -127,15 +130,13 @@ internal partial class EditableParagraph : SelectableTextBlock
       //UpdateVMFromEPEnd();
    }
 
-   protected override void OnLostFocus(RoutedEventArgs e)
+   private void EditableParagraph_LostFocus(object? sender, FocusChangedEventArgs e)
    {
-      base.OnLostFocus(e);
       this.Focusable = false;
    }
 
-   protected override void OnGotFocus(GotFocusEventArgs e)
+   private void EditableParagraph_GotFocus(object? sender, FocusChangedEventArgs e)
    {
-      base.OnGotFocus(e);
       this.Focusable = true;
    }
    

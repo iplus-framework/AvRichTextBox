@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -151,12 +152,12 @@ public partial class RichTextBox : UserControl
       }
    }
 
-   private void RichTextBox_GotFocus(object? sender, GotFocusEventArgs e)
+   private void RichTextBox_GotFocus(object? sender, FocusChangedEventArgs e)
    {
       //Debug.WriteLine("Got focus rtb");
    }
 
-   private void RichTextBox_LostFocus(object? sender, RoutedEventArgs e)
+   private void RichTextBox_LostFocus(object? sender, FocusChangedEventArgs e)
    {
       //Debug.WriteLine("lost focus rtb");
    }

@@ -3,9 +3,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using HtmlAgilityPack;
-using System.Drawing;
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace AvRichTextBox;
@@ -70,10 +68,7 @@ internal static partial class HtmlConversions
          noCols = colNodes.Count;
 
 
-      double tableWidthPix = 100;
-      double margL = 0;
-      double margR = 0;
-      double marg = 0;
+   double tableWidthPix = 100;
 
 
       Dictionary<string, string> parsedTableStyles = ParseStyleAttribute(tableNode.GetAttributeValue("style", ""));
@@ -496,8 +491,6 @@ internal static partial class HtmlConversions
 
    private static readonly Regex Rgba = new(@"^\s*rgba?\(\s*(?<r>\d{1,3})\s*,\s*(?<g>\d{1,3})\s*,\s*(?<b>\d{1,3})\s*(?:,\s*(?<a>[-+]?\d*\.?\d+)\s*)?\)\s*;?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-   private static ColorConverter colConverter = new();
-
    private static SolidColorBrush? ParseCssColor(string cssColor)
    {
       if (string.IsNullOrWhiteSpace(cssColor)) return null;
@@ -526,8 +519,8 @@ internal static partial class HtmlConversions
       // hex (#RGB, #RRGGBB, #AARRGGBB) and named colors (Red, etc.)
       try
       {
-         var obj = colConverter.ConvertFromString(cssColor.TrimEnd(';'));
-         if (obj is Avalonia.Media.Color c) return new SolidColorBrush(c);
+         var c = Avalonia.Media.Color.Parse(cssColor.TrimEnd(';'));
+         return new SolidColorBrush(c);
       }
       catch { }
 

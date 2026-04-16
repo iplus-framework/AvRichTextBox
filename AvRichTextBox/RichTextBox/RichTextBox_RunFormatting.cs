@@ -1,6 +1,8 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
-using RtfDomParserAv;
+using RtfDomParser;
 using static AvRichTextBox.FlowDocument;
 
 namespace AvRichTextBox;
@@ -38,17 +40,20 @@ public partial class RichTextBox
    {      
       if (DisableUserCopy) return;
 
-      var dataObject = new DataObject();
+      var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+      if (clipboard == null) return;
 
       //create rtf string
       List<IEditable> newInlines = FlowDoc.GetRangeInlines(FlowDoc.Selection);
       string rtfString = RtfConversions.GetRtfFromInlines(newInlines);
       byte[] rtfbytes = System.Text.Encoding.Default.GetBytes(rtfString);
 
-      dataObject.Set("Rich Text Format", rtfbytes);
-      dataObject.Set("Text", FlowDoc.Selection.GetText());
-            
-      TopLevel.GetTopLevel(this)!.Clipboard!.SetDataObjectAsync(dataObject);
+      var richTextFormat = DataFormat.CreateBytesPlatformFormat("Rich Text Format");
+      var dataTransfer = new DataTransfer();
+      dataTransfer.Add(DataTransferItem.Create(richTextFormat, rtfbytes));
+      dataTransfer.Add(DataTransferItem.CreateText(FlowDoc.Selection.GetText()));
+
+      _ = clipboard.SetDataAsync(dataTransfer);
       
    }
 
@@ -61,13 +66,17 @@ public partial class RichTextBox
       int originalSelectionStart = FlowDoc.Selection.Start;
       int newSelPoint = originalSelectionStart;
 
-      string[] formats = await TopLevel.GetTopLevel(this)!.Clipboard!.GetFormatsAsync();
-      if (formats.Contains ("Rich Text Format"))
+      var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+      if (clipboard == null) return;
+
+      var richTextFormat = DataFormat.CreateBytesPlatformFormat("Rich Text Format");
+
+      var formats = await clipboard.GetDataFormatsAsync();
+      if (formats.Contains(richTextFormat))
       {
-         object? rtfobj = await TopLevel.GetTopLevel(this)!.Clipboard!.GetDataAsync("Rich Text Format");
-         if (rtfobj != null)
+         byte[]? rtfbytes = await clipboard.TryGetValueAsync(richTextFormat);
+         if (rtfbytes != null)
          {
-            byte[] rtfbytes = (byte[])rtfobj;
             string rtfstring = System.Text.Encoding.Default.GetString(rtfbytes!);
 
             RTFDomDocument dom = new();
@@ -81,17 +90,11 @@ public partial class RichTextBox
             TextPasted = true;
          }
       }
-      else if (formats.Contains("Text"))
+      else if (await clipboard.TryGetTextAsync() is string pasteText)
       {
-         if (await TopLevel.GetTopLevel(this)!.Clipboard!.GetDataAsync("Text") is object textobj)
-         {
-            if (textobj.ToString() is string pasteText)
-            {
-               FlowDoc.SetRangeToText(FlowDoc.Selection, pasteText);
-               newSelPoint = Math.Min(newSelPoint + pasteText.Length, FlowDoc.DocEndPoint - 1);
-               TextPasted = true;
-            }
-         }
+         FlowDoc.SetRangeToText(FlowDoc.Selection, pasteText);
+         newSelPoint = Math.Min(newSelPoint + pasteText.Length, FlowDoc.DocEndPoint - 1);
+         TextPasted = true;
       }
       
       if (TextPasted)

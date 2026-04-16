@@ -4,9 +4,10 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using DynamicData;
-using RtfDomParserAv;
+using RtfDomParser;
 using System.Text.RegularExpressions;
 using static AvRichTextBox.HelperMethods;
+using SDColor = System.Drawing.Color;
 
 namespace AvRichTextBox;
 
@@ -209,11 +210,11 @@ internal static partial class RtfConversions
                      break;
 
                   case "brdrcf":
-                     newCell.BorderBrush = new SolidColorBrush(cTable.GetColor(att.Value, Colors.Black));
+                     newCell.BorderBrush = new SolidColorBrush(ToAvaloniaColor(cTable.GetColor(att.Value, SDColor.Black)));
                      break;
 
                   case "clcbpat":
-                     newCell.CellBackground = new SolidColorBrush(cTable.GetColor(att.Value, Colors.Black));
+                     newCell.CellBackground = new SolidColorBrush(ToAvaloniaColor(cTable.GetColor(att.Value, SDColor.Black)));
                      break;
 
                   case "cellx":
@@ -279,8 +280,8 @@ internal static partial class RtfConversions
          case RTFAlignment.Justify: newpar.TextAlignment = TextAlignment.Justify; break;
       }
 
-      newpar.Background = new SolidColorBrush(rtfpar.Format.BackColor);
-      newpar.BorderBrush = new SolidColorBrush(rtfpar.Format.BorderColor);
+      newpar.Background = new SolidColorBrush(ToAvaloniaColor(rtfpar.Format.BackColor));
+      newpar.BorderBrush = new SolidColorBrush(ToAvaloniaColor(rtfpar.Format.BorderColor));
       newpar.BorderThickness = new Avalonia.Thickness(TwipToPix(rtfpar.Format.BorderWidth));
 
       newpar.FontFamily = new FontFamily(rtfpar.Format.FontName);
@@ -421,6 +422,11 @@ internal static partial class RtfConversions
          int unicodeValue = int.Parse(match.Groups[1].Value);
          return char.ConvertFromUtf32(unicodeValue);
       });
+   }
+
+   private static Avalonia.Media.Color ToAvaloniaColor(SDColor c)
+   {
+      return Avalonia.Media.Color.FromArgb(c.A, c.R, c.G, c.B);
    }
 
    [GeneratedRegex(@"\\u(-?\d+)\?")]
