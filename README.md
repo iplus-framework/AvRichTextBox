@@ -1,14 +1,19 @@
 # A RichTextBox control for Avalonia
 [![NuGet version](https://img.shields.io/nuget/v/Simplecto.Avalonia.RichTextBox.svg?cachebuster=1)](https://www.nuget.org/packages/Simplecto.Avalonia.RichTextBox/)
 
-As of ~~2024,2025~~2026, Avalonia doesn't yet come with a RichTextBox, and since I needed one I created a "poor-man's version" based on the existing control `SelectableTextBlock`.
+As of ~~2024,2025~~2026, Avalonia doesn't yet come with a RichTextBox, and since I needed one I created a "poor-man's version" based on the existing control ~~`SelectableTextBlock`~~`TextBlock`.
 
-Mirroring WPF, this `RichTextBox` control uses the concept of a `FlowDocument` (`FlowDoc`), which contains `Blocks` (at the current time, only `Paragraph` is available, although `Section` or `Table` could be added later). 
-`Paragraph` contains `IEditable` objects (`EditableRun` (from `Avalonia.Controls.Documents.Run`) and `EditableInlineUIContainer` (from `Avalonia.Controls.Documents.InlineUIContainer`)) and it is bound to an `EditableParagraph` (inheriting from `SelectableTextBlock`).
+Mirroring WPF, this `RichTextBox` control uses the concept of a `FlowDocument` (`FlowDoc`), which contains `Blocks` (which can be either of two types: `Paragraph` or `Table`). 
 
-The `FlowDoc` is at heart merely an `ObservableCollection` of Blocks bound as the `ItemsSource` of an `ItemsControl` inside a `ScrollViewer`. Upon adding the appropriate key input handling, the control functions like a `RichTextBox`.
+`Paragraph` contains `IEditable` objects (`EditableRun` (from `Avalonia.Controls.Documents.Run`) and `EditableInlineUIContainer` (from `Avalonia.Controls.Documents.InlineUIContainer`)) and it is bound to an `EditableParagraph` UI (inheriting from ~~`SelectableTextBlock`~~`TextBlock`).
 
-(The harder part after that was implementing the selection logic, because `Selection` for the `RichTextBox` has to be able to move between and span multiple Paragraphs (SelectableTextBlocks), both with the keyboard and the mouse, and to allow editing functions that involve splitting or merging Paragraphs. And of course the Inline logic for spanning, inserting, splitting or deleting Inlines.)
+`Table` blocks contain a set of `Cell` objects each with properties `RowNo` and `ColNo`, as well as a collection of `Block`, and it is bound to an `EditableTable` UI which is an `ItemsControl`.
+
+The `FlowDoc` is at heart merely an `ObservableCollection` of `Block`s bound as the `ItemsSource` of an `ItemsControl` inside a `ScrollViewer`. Upon adding the appropriate key input handling and internal updating, the control functions like a `RichTextBox`.
+
+The hardest part of this all has been the editing functions for splitting, deleting, inserting and keeping track of the `IEditable` objects.
+
+
 
 ```mermaid
 classDiagram
@@ -16,21 +21,22 @@ classDiagram
         +FlowDocument FlowDoc
     }
     class FlowDocument{
-        +ObservableCollection<Blocks>
+        +ObservableCollection~Block~ Blocks
+        +ObservableCollection~TextRange~ TextRanges
     }
-    class FlowDoc{
-        -List<TextRange> TextRanges
+    class Block{
+        +Paragraph
+        +Table
     }
-    class Blocks{
-        +Paragraph Paragraph
-    }
+    
     class Paragraph{
-        +IEditable Objects
-        +EditableParagraph EditableParagraph
+        +IEditable Inlines
     }
     class IEditable{
-        +EditableRun EditableRun
-        +EditableInlineUIContainer EditableInlineUIContainer
+        +EditableRun
+        +EditableInlineUIContainer
+        +EditableLineBreak
+        +EditableHyperlink
     }
     class Selection{
     }
@@ -42,18 +48,33 @@ classDiagram
         +string Text
         +ApplyFormatting(AvaloniaProperty,  object)
     }
+    class Table{
+      +ColDefs
+      +RowDefs
+      +ObservableCollection~Cell~ Cells
+    }
+    class Cell{
+      +RowNo
+      +ColNo
+      +RowSpan
+      +ColSpan
+      +ObservableCollection~Block~ CellBlocks
+    }
 
     RichTextBox --> FlowDocument : has
-    FlowDocument --> Blocks : has
-    FlowDoc --> TextRange : has
-    Blocks --> Paragraph : contains
+    FlowDocument --> Block : has
+    FlowDocument --> TextRange : has
+    Block --> Paragraph : is
+    Block --> Table : is
     Paragraph --> IEditable : has
     TextRange --> Selection : instance
-    RichTextBox --> FlowDoc : has
+    Table --> Cell : contains
+    
+    
 
 ```
 
-**A Debugging panel can be displayed in Debug mode by setting "ShowDebuggerPanelInDebugMode" to True.  The panel displays Inline debugging information - Inline starts, paragraph starts, inline texts, and indicates the inlines of the Selection start and end by background color coding.  The Debugger panel is not shown or active in Release mode**
+**A Debugging panel can be displayed in Debug mode by setting "ShowDebuggerPanelInDebugMode" to True.  The panel displays Inline debugging information - Inline starts, paragraph starts, inline texts, and indicates the inlines of the Selection start and end by background color coding.  No Debugger panel is created or shown in Release mode**
 
 The RichTextBox has the usual key functions:
 * <kbd>Ctrl</kbd>+<kbd>B</kbd> for **bold**/unbold
@@ -64,38 +85,99 @@ The RichTextBox has the usual key functions:
 
 The `FlowDoc` has a `Selection` property, with `Start`, `End`, `Length`, `Select`, `Delete`, `Text`, etc.
 
-The `RichTextBox` also includes the concept of `TextRange` (of which `Selection` is merely a special case), which can be defined to format text from code independent from the current `FlowDoc.Selection`. A new `TextRange` is created with a `Start` and `End` (and its owning `FlowDoc`), whereby it is automatically added to the `FlowDoc's TextRanges List` so its Start and/or End can be updated whenever text changes in the `FlowDoc` require it. `TextRange` also has an `ApplyFormatting` property which allows any `AvaloniaProperty` to be applied that pertains to Inlines.
+The `RichTextBox` also includes the concept of `TextRange` (of which `Selection` is merely a special case), which can be defined to format text from code independent from the current `FlowDoc.Selection`. A new `TextRange` is created with a `Start` and `End` (and its owning `FlowDoc`), whereby it is automatically added to the `FlowDoc`'s `TextRanges` List, which get auto-updated whenever text changes in the `FlowDoc` require it. `TextRange` also has an `ApplyFormatting` property which allows any `AvaloniaProperty` to be applied that pertains to Inlines.
 
 The RichTextBox content can be saved/loaded either as straight Xaml or a XamlPackage (to preserve images), similar to the WPF RichTextBox.
 It can also save and load the FlowDoc content as a Word document (.docx), Rtf document (.rtf) or Html (.html), though only with a subset of attributes.  This includes text, common text/paragraph formatting, images, highlighting, forecolor, justification, borders, etc.  
 
-Content can be directly added in Xaml as well:
+Programmatically, content can be added by adding Paragraph/Table objects to FlowDocument
+
+```csharp
+
+        Paragraph firstPar = new(AvRTB.FlowDocument);
+        
+        firstPar.Inlines.AddRange([
+            new EditableRun("A first line with super/subscripts: "),
+            new EditableRun("H"),
+            new EditableRun("2") { BaselineAlignment = BaselineAlignment.Subscript },
+            new EditableRun("O"),
+            new EditableRun(" at 2 g/m") { },
+            new EditableRun("3") { BaselineAlignment = BaselineAlignment.Superscript },
+            new EditableRun(", and a simple hyperlink: "),
+            new EditableHyperlink("go to google", @"https://www.google.com"),
+            new EditableRun(" for testing.")
+        ]);
+
+        AvRTB.FlowDocument.Blocks.Add(firstPar);
+
+        Paragraph secondPar = new(AvRTB.FlowDocument);
+        secondPar.Inlines.Add(new EditableRun("A second paragraph just before the table."));
+        AvRTB.FlowDocument.Blocks.Add(secondPar);
+
+        //Add a Table
+        int noCols = 5;
+        int noRows = 4;
+        Table newTable = new (noCols, noRows, AvRTB.FlowDocument) { BorderThickness = new(1), BorderBrush = Brushes.ForestGreen, TableAlignment = HorizontalAlignment.Center };
+        
+        for (int rowno = 0; rowno < noRows; rowno++)
+        {
+            for (int colno = 0; colno < noCols; colno++)
+            {
+                int cellno = rowno * noCols + colno;
+                Cell c = newTable.Cells[cellno];
+                c.CellVerticalAlignment = VerticalAlignment.Center;
+                Paragraph p = new (AvRTB.FlowDocument) { TextAlignment = TextAlignment.Center };
+                p.Inlines.Add(new EditableRun("col:" + colno));
+                p.Inlines.Add(new EditableLineBreak());
+                p.Inlines.Add(new EditableRun("row:" + rowno));
+                c.CellBlocks[0] = p;
+            }
+        }
+
+        //Merge cells
+        newTable.MergeCellsRight(rowNo: 1, colNo: 1, numberCellsToMerge: 1);
+        newTable.MergeCellsDown(rowNo: 1, colNo: 3, numberCellsToMerge: 1);
+
+
+        //Add a leftmost column
+        newTable.InsertColumns(0, 1);
+
+        //Add a row before third row 
+        newTable.InsertRows(2, 1);
+           
+        AvRTB.FlowDocument.Blocks.Add(newTable);
+        
+        Paragraph newPar = new(AvRTB.FlowDocument);
+        newPar.Inlines.Add(new EditableRun("Some extra text after the table."));
+        AvRTB.FlowDocument.Blocks.Add(newPar);
+
+```
+
+Content can also be added directly in Xaml:
 			
 ```xaml  
-<avrtb:RichTextBox ShowDebuggerPanelInDebugMode="True" >
+xmlns:avrtb="using:AvRichTextBox"
+
+<avrtb:RichTextBox >
 
 	<avrtb:RichTextBox.FlowDocument>
-		<avrtb:FlowDocument >
-			<avrtb:FlowDocument.Blocks>
+					<avrtb:FlowDocument >
+						<avrtb:FlowDocument.Blocks>
 
-            <avrtb:Paragraph>
-					<avrtb:Paragraph.Inlines>
-						<avrtb:EditableRun Text="This is a line of text. "/>
-                  <avrtb:EditableRun Text="With a second run."/>
-					</avrtb:Paragraph.Inlines>
-				</avrtb:Paragraph>
+							<avrtb:Paragraph>
+								<avrtb:Paragraph.GetInlines>
+									<avrtb:EditableRun Text="This is a line of text. "/>
+									<avrtb:EditableRun Text="With a second run."/>
+								</avrtb:Paragraph.GetInlines>
+							</avrtb:Paragraph>
 
-				<avrtb:Paragraph>
-					<avrtb:Paragraph.Inlines>
-						<avrtb:EditableInlineUIContainer>
-							<Image Width="100" Height="60" Source="avares://DemoApp_AvRichTextBox/Assets/avalonia-logo.ico"/>
-						</avrtb:EditableInlineUIContainer>
-					</avrtb:Paragraph.Inlines>
-				</avrtb:Paragraph>
+                     <avrtb:Table ColDefs="100, 150, 100" RowDefs="100, 100, 100" />
+					
+				         <avrtb:Paragraph/>
 
-			</avrtb:FlowDocument.Blocks>
-		</avrtb:FlowDocument>
-	</avrtb:RichTextBox.FlowDocument>
+						</avrtb:FlowDocument.Blocks>
+					</avrtb:FlowDocument>
+				</avrtb:RichTextBox.FlowDocument>
 
 </avrtb:RichTextBox>
 ```
@@ -103,74 +185,217 @@ Content can be directly added in Xaml as well:
 
 ## Various future to-do improvements include:
 * Word/Html/RTF export and import can be fleshed out (to support more attributes)
-* Allow Save/Load `TextRange` to Rtf stream
-* Make Undo more solid, allow the Undo limit to be set, create a Redo stack
+* Allow setting of Undo limit
 
 `RtfDomParser` used for reading/parsing of rtf files can be found at https://github.com/SourceCodeBackup/RtfDomParser, but for this project I had to manually modify it to use `Avalonia.Media` instead of `System.Drawing`.  That modified library is included in this project as `RtfDomParserAv.dll`.  Generation of .rtf for saving is my own concoction with the bare minimum necessary to produce a readable .rtf file/dataobject.
 
 ## Usage Examples
-Time is always a limiting factor, so I'd appreciate any contributors who have used this library and have time/interest to add usage examples for this library.
+I'd appreciate any contributors who have used this library and have time/interest to add usage examples for this library.
 A file for usage examples is in `/docs/BasicUsage.md`.
-If you are able, feel free to add a section to BasicUsage.md, or even create a new file under `/docs`, then open a pull request.
+If you are able, feel free to add a section to `BasicUsage.md`, or even create a new file under `/docs`, then open a pull request.
 
 
 ## Change log
 
-**[ver 1.0.15] - 2025/02/22**
-Internal binding was of the RTB itself to its viewmodel, which prevented external binding to `UserControl` properties (such as IsVisible).  Internal binding is now to the immediate child (`DockPanel` "MainDP"), freeing up the properties of the `UserControl` itself.
+**[ver 1.0.15] - 2025/02/22**  
+Internal binding was of the RTB itself to its viewmodel, which prevented external binding to `UserControl` properties (such as `IsVisible`).  Internal binding is now to the immediate child (`DockPanel` "MainDP"), freeing up the properties of the `UserControl` itself.  
 Also upgraded copy/paste to allow copying and pasting of paragraph breaks (\r), which were ignored before.
 
-**[ver 1.0.16] 2025/02/25**
-Now works with Avalonia 11.1.xx & 11.2.xx!  Binding update issues resolved.  Previous `AvRichTextBox` versions failed on Avalonia 11.1 and higher and have been deprecated.
-In addition, added IME support for Chinese/Japanese input.  Kanji and Hanzi can now be directly inputted in the RichTextBox.
+**[ver 1.0.16] 2025/02/25**  
+Now works with Avalonia 11.1.xx & 11.2.xx!  Binding update issues resolved.  Previous `AvRichTextBox` versions failed on Avalonia 11.1 and higher and have been deprecated.  
+In addition, added IME support for Chinese/Japanese input.  Kanji and Hanzi can now be directly inputted in `AvRichTextBox`.
 
-**[ver 1.0.17] 2025/02/26**
-Improved IME popup location and behavior (Hides on Esc key, or after backspacing to null entry).
+**[ver 1.0.17] 2025/02/26**  
+Improved IME popup location and behavior (Hides on Esc key, or after backspacing to null entry).  
 In addition, the RichTextBox content can now be saved as .rtf  (`SaveRtfDoc(string fileName)`).  As of now, not all font attributes are honored in the save.
 
-**[ver 1.2.0] 2025/02/27**
+**[ver 1.2.0] 2025/02/27**  
 Copying of richtext content (rtf format) is now possible.  Some navigation and pasting fixes/improvements.  Also pasting of large-volume text is now much faster.  Technically 1.0.16 should have been numbered 1.2.0 but hey.
 
-**[ver. 1.2.1] 2025/02/28**
+**[ver. 1.2.1] 2025/02/28**  
 `FontFamily` now included in rtf copy/paste, fixed Word reading error due to fonts
 
-**[ver. 1.2.6] 2025/04/05**
+**[ver. 1.2.6] 2025/04/05**  
 Some minor fixes: run break errors, and better handling of Word colors.  Also setting `ShowDebuggerPanelInDebugMode` at runtime will now dynamically show/hide the Debugger panel.
 
-**[ver. 1.3.0] 2025/04/06**
+**[ver. 1.3.0] 2025/04/06**  
 Can save/load as Html.  Rtf images/line spacing now saved.  `Paragraph` borders, colors and backgrounds supported.
 
-**[ver. 1.3.2] 2025/04/09**
-Changed the underlying strategy for Undo. Undo now creates clones instead of retaining objects, which was causing problems during complex Undo sequences.
+**[ver. 1.3.2] 2025/04/09**  
+Changed the underlying strategy for Undo. Undo now creates clones instead of retaining objects, which was causing problems during complex Undo sequences.  
 Also made `ShowDebuggerPanelInDebugMode` default to `False`. 
 
-**[ver. 1.3.8] 2025/08/02**
+**[ver. 1.3.8] 2025/08/02**  
 Includes changes such as fix to mouse selection (wasn't working in Release mode), double/triple clicking to select word/paragraph, and `IsReadOnly` property for the RichTextBox.
 
 ...
 
-**[ver 1.4.5] 2026/01/28**
-Multiple/overlapping text formatting and undos now work better being based on `IEditable` Ids rather than using their in-paragraph indexes. Also `Paragraph` Ids instead of indexes.  Fixed erroneous deletion of required empty inline before `EditableLineBreak`.  `Paragraph` text ends with "\r\n" as is proper (rather than "\r").
+**[ver 1.4.5] 2026/01/28**  
+Multiple/overlapping text formatting and undos now work better being based on `IEditable` Ids rather than using their in-paragraph indexes. Also `Paragraph` Ids instead of indexes.  
+Fixed erroneous deletion of required empty inline before `EditableLineBreak`.  
+`Paragraph` text ends with "\r\n" as is proper (rather than "\r").
 
-**[ver 1.4.6] 2026/01/30**
-Further Undo improvements
+**[ver 1.4.7] 2026/01/30**  
+No `DebugPanel` created at all (not just hidden) in Release mode, as it should have been from the start.
 
-**[ver 1.4.7] 2026/01/30**
-No `DebugPanel` created at all (not just hidden) in Release mode.  Should have been this way from the start...
-
-**[ver. 1.5.0] 2026/01/30**
+**[ver. 1.5.0] 2026/01/30**  
 Can add direct content to `RichTextBox` in Xaml
 
-**[ver. 1.6.0] 2026/02/xx**
+**[ver. 1.6.0] 2026/02/xx**  
 Can set `SelectionBrush` globally for AvRichTextBox
 
-**[ver.1.6.2] 2026/03/01**
-**[ver.1.6.3]**
-Added preliminary `Table` support.  `Table` can be added as a `Block` in the `FlowDocument`.  (Some bugs remain to be fixed.)
+**[ver.1.6.3] 2026/03/01**  
+Added preliminary `Table` support.  `Table` can be added as a `Block` in the `FlowDocument`.  (Some bugs remain to be fixed: for example, copying/pasting of tables not supported yet.)  
 In addition, `BaselineAlignment.Superscript`/`.Subscript` runs now appear properly as such (raised/lowered text).  (Modification was necessary because Avalonia's `SelectableTextBlock` currently doesn't display them properly).  
 
-**[ver 1.6.4] 2026/03/22**: updated to Avalonia 11.3.12
+**[ver 1.6.4] 2026/03/22**  
+updated to Avalonia 11.3.12
 
-**[ver 1.6.5] 2026/03/22**: fixed possible out of bounds error TextRunBounds in _SelectionRect.cs
+**[ver 1.6.5] 2026/03/22**  
+fixed possible out of bounds error `TextRunBounds` in _SelectionRect.cs
 
-**[ver 1.6.6] 2026/03/22**: fixed GetVisualDescendants() error in Debug mode
+**[ver 1.6.6] 2026/03/22**  
+fixed `GetVisualDescendants()` error in Debug mode
+
+**[ver 1.7.1] 2026/04/17**  
+Updated to Avalonia 12
+
+**[ver 1.7.3] 2026/04/18**  
+Added end byte "\0" to clipboard rtfstring for some apps that need it.  
+Fixed: Deleting all RTB content as a `Range` (i.e. selecting all (Ctrl-A) + Delete) prevented input or crashed.  
+Fixed: Errors with pasting of multiple paragraphs
+
+**[ver 1.7.4] 2026/04/20**  
+Made `RtfDomParserAv` parse numbered lists (as consecutive numbers)
+
+**[ver 1.7.5] 2026/04/21**  
+External images can now be pasted into RTB.  
+Removed setting default collection on `BlocksProperty` of `FlowDocument`, which was causing multiple RTBs to point to the same collection.  `Blocks` collection is now created in `FlowDocument` ctor.
+
+**[ver 1.7.6] 2026/04/24**  
+Fixed various pasting errors
+Added `TextRange.Load()`/`.Save()` (to and from Xaml, Rtf, Text)  
+`RichTextBox` now has a `Zoom` (double) property.  
+Fixed `LoadXaml` was not parsing `FontFamily` for `EditableRun`s  
+Changed default for `LineHeight` of `Paragraph` from 18.666 to 0 (height based on fontsize)
+
+**[ver 1.8.0] 2026/04/29**  
+Completely revamped the visual method for displaying text selection (independent highlighting across the RTB, which no longer depends on each `SelectableTextBlock`).  
+`EditableParagraph` therefore changed to inherit from the more lightweight `TextBlock` instead of `SelectableTextBlock`, since the selection function is no longer needed.  
+This new selection method can now properly highlight linebreaks and empty paragraphs as well.  
+Caret size and position also fixed for most cases.
+
+**[ver 1.8.1] 2026/04/29**  
+Disabled user setting of `Horizontal/VerticalContentAlignment` directly on `RichTextBox`, which would break internal measurement of caret and selection highlighting.  
+Fixed mouse selection relative to `FlowDoc.PagePadding` and `Zoom`.  
+Fixed issue with quotes in html/rtf loading.
+
+
+**[ver 1.8.3] 2026/05/01**  
+Fixed undo not working after toggling formatting on/off while typing  
+Fixed underlining not saving in html.  
+Added right-click ContextMenu (Copy/Paste/Cut/Delete)  
+Shift+Ctrl-Right/Left to select next(previous word)  
+Shift+Ctrl-Home/End to select to Home/End  
+Caret color is customizable  (`CaretBrush`)
+
+
+**[ver 1.9.1] 2026/06/19**  
+Updated to Avalonia 12.0.2  
+Revamped internal inline calculations  
+Added `EditableHyperlink`  
+Multiple paragraphs allowed in table `Cell`s (theoretically any type of `Block`, so even a nested `Table`), but this is not at all tested).  
+Hyperlink support with popup edit dialog. (`EditableHyperlink`)  
+Removed `VerticalAlignment` property from `Paragraph`: Now `Cell` has `VerticalAlignment` instead, to adjust content position within cells.  
+Fixed format toggling issues.  
+Table cell borders adjustable by mouse.
+
+**[ver 1.9.2] 2026/06/20**  
+Updated to Avalonia 12.0.4
+
+**[ver 1.9.3] 2026/06/21**  
+Table/row heights now dynamically change with cell contents.  
+Some important paragraph Delete/Undo fixes
+
+**[ver 1.9.4] 2026/08/19**  
+Caret blink mechanism changed to styling
+
+**[ver 1.9.6] 2026/08/23**  
+Fix to multi-paragraph copy/paste  
+Can copy/paste full tables  
+Can add new `Paragraph` in Table Cell using keyboard (`Enter` key)
+
+**[ver 1.9.7] 2026/08/27**  
+Fixes for certain multi-paragraph copy/paste cases
+
+**[ver 1.9.8] 2026/08/28**  
+Fixes for certain `EditableLineBreak` cut/paste cases.  
+Pasting an image adds new paragraph at end instead of caret sitting at right of image.
+
+**[ver 1.9.9] 2026/08/29**  
+Fixed rtf table cell horizontal merge borders
+
+**[ver 1.9.11] 2026/09/01**  
+Added `MergeCellsRight()` and `MergeCellsDown()` methods to `Table`  
+Returned default `Cell.BorderBrush` to `Brushes.Black`  
+Cleaner borders between table cells (no adjacent doubles)  
+Shift + mouse drag on cell border increases/decreases entire table size
+
+**[ver 1.9.13] 2026/09/02**  
+Added `InsertColumns(idx, count)` and `InsertRows(idx, count)` methods to `Table`  
+Removed `FontWeight` on `Hyperlink` Popup
+
+**[ver 1.9.14] 2026/09/04**  
+Fixed problem with pasting multiple paragraphs into Cell  
+`FlowDoc.ScrollToCaret()` method added  
+Changed public -> internal for some classes/properties that do not need to be public
+
+**[ver 1.10.1] 2026/09/08**  
+**This version onward has potentially breaking changes**  
+Direct manipulation of the collections `FlowDocument.Blocks` and `Cell.CellBlocks` is now prevented in favor of public methods (`InsertBlockAt`, `RemoveBlockAt`, `RemoveBlock`, etc.), in order to ensure Undo integrity.  
+Undos have been added for programmable properties (such as `FontSize`, `Background`, `BorderThickness`), so app-defined changes will also be undoable by `Ctrl-Z`.
+**Other changes:**  
+Mouse dragging resize of rows/cols undoable with `Ctrl-Z`  
+Fixed wrong caret position when setting `Margin` on a `Paragraph`  
+Many previous public properties are now internal like they should be.  
+Direct setting of `Child` on `EditableInlineUIContainer` is prevented in favor of `SetChild()`/`GetChild()` (which are logged in the Undo list)  
+Fixed continuous typing for inline formatting change (Bold/Italic/Underline)  
+RtfDomParserAv.dll was missing in some previous packages
+
+**[ver 1.10.2] 2026/09/08**  
+Fixed some caret movement quirks.  
+
+**[ver 1.10.3] 2026/09/08**  
+Fixed proper cell-to-cell caret movement in `Table` with multiple paragraphs  
+`EditableHyperlink.NavigateUri` restored to public  
+
+**[ver 1.10.4] 2026/09/10**  
+Added `LinkOpening` event to `EditableHyperlink` to allow custom handling  
+Some initial Redos have been implemented (Deleting/Inserting/Pasting/PagePadding/programmed `Block` property Redos)  
+
+**[ver 1.11.0] 2026/09/19**  
+New parameterless constructors for `Block()` (`Paragraph` or `Table`), instead of passing the current `FlowDocument`, and for `Cell()`, instead of passing `OwningTable`.  
+The `FlowDocument` or `Table` instance for these objects is instead assigned in the appropriate `CollectionChanged` events.  
+(The lack of parameterless ctors was preventing direct Xaml creation)  
+Updated README.md and BasicUsage.md which were outdated.  
+---**Breaking change**---  
+`EditableHyperlink.Text` is now set as `EditableHyperlink.LinkDisplayText`, rather than directly.  
+Updated to Avalonia 12.1.2  
+`TextRange`s update more properly with Undo/Redo actions  
+
+**[ver 1.11.1] 2026/09/21**  
+`DeleteRange` + `InsertParagraph` combined operation fix  
+Fixed `TextRange` adjust when deleting `EditableRun`  
+Col/Row add/remove bugs fixed  
+Fixed Redo paste in Table bug  
+
+**[ver 1.11.2] 2026/09/23**  
+The following public method name changes for Col/Row manipulation:  
+`InsertRows(...)` -> `InsertRowsAt(...)`  
+`InsertCols(...)` -> `InsertColsAt(...)`  
+`MergeCellsRight(...)` -> `MergeCellsRightAt(...)`  
+`MergeCellsDown(...)` ->`MergeCellsDownAt(...)`  
+The following methods have been added, though currently without undo/redo capability:  
+`SplitCellVertical(...)`/`SplitCellHorizontal(...)`  
+Fixed bug with multiple `TextDecoration`s Undo (e.g. underline+strikeout)  
+Fixed multiple paragraphs in Cells not reading in for XamlPackage/Html  

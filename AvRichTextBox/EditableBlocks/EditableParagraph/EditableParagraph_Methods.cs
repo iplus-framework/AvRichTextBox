@@ -5,98 +5,108 @@ namespace AvRichTextBox;
 
 internal partial class EditableParagraph
 {
- 
-   private InlineCollection GetFormattedInlines()
-   {
-   
-      InlineCollection returnInlines = [];
-      if (this.DataContext is Paragraph p)
-      {
-         foreach (IEditable ied in p.Inlines)
-         {
-            if (ied is EditableRun erun)
-            {               
-               switch (erun.BaselineAlignment)
-               {
-                  case BaselineAlignment.Subscript:
-                     
-                     returnInlines.Add(CreateScriptRun(erun));
-                     continue;
-                  case BaselineAlignment.Superscript:
-                     returnInlines.Add(CreateScriptRun(erun));
-                     continue;
-               }
+
+    private InlineCollection GetFormattedInlines()
+    {
+
+        InlineCollection returnInlines = [];
+        if (this.DataContext is Paragraph p)
+        {
+            foreach (IEditable ied in p.Inlines)
+            {
+                if (ied is EditableRun erun)
+                {
+                    switch (erun.BaselineAlignment)
+                    {
+                        case BaselineAlignment.Subscript:
+                        case BaselineAlignment.Superscript:
+                            returnInlines.Add(CreateScriptRun(erun));
+                            continue;
+                    }
+                }
+
+                //// Ensure IUC is not already in another paragraph
+                //else if (ied is EditableInlineUIContainer eUIC)
+                //{
+                //    if (p.MyFlowDoc.AllParagraphs.FirstOrDefault(alp => alp != p && alp.Inlines.Contains(ied)) is Paragraph contP && contP.Inlines.FirstOrDefault(ied=> ied is EditableInlineUIContainer) is EditableInlineUIContainer eiuc)
+                //        eiuc.SetChild(null!);
+                //}
+
+                returnInlines.Add((Inline)ied);
+
             }
+        }
 
-            returnInlines.Add((Inline)ied);
-                       
-         }
-      }
-      
-      return returnInlines;
-   }
+        return returnInlines;
+    }
 
-   private static Run CreateScriptRun(EditableRun erun)
-   {
-      Run scriptRun = new(erun.Text)
-      {
-         FontSize = erun.FontSize * 0.75,
-         FontWeight = erun.FontWeight,
-         FontStyle = erun.FontStyle,
-         FontFamily = erun.FontFamily,
-         Foreground = erun.Foreground,
-         Background = erun.Background,
-         TextDecorations = erun.TextDecorations,
-         BaselineAlignment = erun.BaselineAlignment == BaselineAlignment.Superscript ? BaselineAlignment.Superscript : BaselineAlignment.TextBottom
-      };
+    private static Run CreateScriptRun(EditableRun erun)
+    {
+        Run scriptRun = new(erun.Text)
+        {
+            FontSize = erun.FontSize * 0.75,
+            FontWeight = erun.FontWeight,
+            FontStyle = erun.FontStyle,
+            FontFamily = erun.FontFamily,
+            Foreground = erun.Foreground,
+            Background = erun.Background,
+            TextDecorations = erun.TextDecorations,
+            //BaselineAlignment = erun.BaselineAlignment == BaselineAlignment.Superscript ? BaselineAlignment.Superscript : BaselineAlignment.TextBottom
+            BaselineAlignment = erun.BaselineAlignment == BaselineAlignment.Superscript ? BaselineAlignment.Superscript : BaselineAlignment.Subscript
+        };
 
+        return scriptRun;
 
-      return scriptRun;
-
-   }
+    }
 
 
-   internal void UpdateInlines()
-   {
-      if (((Paragraph)this.DataContext!).Inlines != null)
-         this.Inlines = GetFormattedInlines();
+    internal void UpdateInlines()
+    {
+        if (this.DataContext is not Paragraph par) return;
 
-      //foreach (Inline thisIL in this.Inlines!)
-      //   Debug.WriteLine("1:\n" + ((Run)thisIL).GetText + " ::: " + thisIL.FontWeight);
+        if (par.Inlines != null)
+            this.Inlines = GetFormattedInlines();
 
-      //this.Height = this.Inlines[0].get
+        //foreach (Inline thisIL in this.Inlines!)
+        //   Debug.WriteLine("1:\n" + ((Run)thisIL).GetText + " ::: " + thisIL.FontWeight);
 
-      this.InvalidateMeasure();
-      this.InvalidateVisual();
-   }
+        this.InvalidateMeasure();
+        this.InvalidateVisual();
+    }
 
-   public void UpdateVMFromEPStart()
-   {
-      SelectionStartRect_Changed?.Invoke(this);
-      this.SetValue(TextLayoutInfoStartRequestedProperty, false);
+    private void UpdateParRelativePos()
+    {
+        if (ThisPar != null)
+        {
+            ThisPar.TextLayout = this.TextLayout;
 
-   }
+            if (myDocIC != null)
+            {
+                if (this.TranslatePoint(new Point(0, 0), myDocIC) is Point p)
+                {
+                    ThisPar.DocICRelativeTop = p.Y; 
+                    ThisPar.DocICRelativeLeft = p.X;
+                }
+            }
+        }
+    }
 
-   public void UpdateVMFromEPEnd()
-   {
-      SelectionEndRect_Changed?.Invoke(this);
-      this.SetValue(TextLayoutInfoEndRequestedProperty, false);
-   }
+    internal void UpdateVMFromEPStart()
+    {
+        this.SetValue(TextLayoutInfoStartRequestedProperty, false);
+        this.UpdateLayout();
+        UpdateParRelativePos();
 
-   //private int GetClosestIndex(int lineNo, double distanceFromLeft, int direction)
-   //{
-   //   CharacterHit chit = this.TextLayout.TextLines[lineNo + direction].GetCharacterHitFromDistance(distanceFromLeft);
+    }
 
-   //   double CharDistanceDiffThis = Math.Abs(distanceFromLeft - this.TextLayout.HitTestTextPosition(chit.FirstCharacterIndex).Left);
-   //   double CharDistanceDiffNext = Math.Abs(distanceFromLeft - this.TextLayout.HitTestTextPosition(chit.FirstCharacterIndex + 1).Left);
+    internal void UpdateVMFromEPEnd()
+    {
+        this.SetValue(TextLayoutInfoEndRequestedProperty, false);
+        this.UpdateLayout();
+        UpdateParRelativePos();
 
-   //   if (CharDistanceDiffThis > CharDistanceDiffNext)
-   //      return chit.FirstCharacterIndex + 1;
-   //   else
-   //      return chit.FirstCharacterIndex;
+    }
 
-
-   //}
 
 
 }

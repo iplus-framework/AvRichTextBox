@@ -3,7 +3,6 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
-using DocumentFormat.OpenXml.Drawing.Charts;
 using HtmlAgilityPack;
 using System.Net;
 using System.Text;
@@ -17,7 +16,7 @@ internal static partial class HtmlConversions
    {
 
       HtmlDocument hdoc = new();
-      
+
       HtmlNode html = hdoc.CreateElement("html");
       HtmlNode head = hdoc.CreateElement("head");
       HtmlNode body = hdoc.CreateElement("body");
@@ -51,14 +50,14 @@ internal static partial class HtmlConversions
                break;
          }
       }
-      
+
       return hdoc;
-        
+
    }
 
    private static HtmlNode GetTableNode(Table t, HtmlDocument hdoc)
    {
-    
+
       int noCols = t.ColDefs.Count;
       double colWidthPerc = Math.Round(100D / noCols);
 
@@ -74,10 +73,10 @@ internal static partial class HtmlConversions
       }
 
       double tabBorderThickness = t.BorderThickness.Left;
-      string tabBorderCol = ColorToCss(t.BorderBrush.Color);
+      string tabBorderCol = ColorToCss(t.BorderBrush is SolidColorBrush scb ? scb.Color : Colors.Transparent);
 
       HtmlNode tableNode = hdoc.CreateElement("table");
-      string tableStyleString = 
+      string tableStyleString =
          "border-spacing: 0;" +
          "border-collapse: collapse;" +
          $"border: {tabBorderThickness}px solid {tabBorderCol};" +
@@ -109,7 +108,7 @@ internal static partial class HtmlConversions
             {
                HtmlNode cellNode = hdoc.CreateElement("td");
 
-               string valignString = thisCell.CellVerticalAlignment switch { VerticalAlignment.Top => "top", VerticalAlignment.Center => "center" , VerticalAlignment.Bottom => "bottom", _=> "center"};
+               string valignString = thisCell.CellVerticalAlignment switch { VerticalAlignment.Top => "top", VerticalAlignment.Center => "center", VerticalAlignment.Bottom => "bottom", _ => "center" };
 
                string cellStyleString =
                   $"border-width: {thisCell.BorderThickness.Top}px {thisCell.BorderThickness.Right}px {thisCell.BorderThickness.Bottom}px {thisCell.BorderThickness.Left}px;" +
@@ -125,10 +124,13 @@ internal static partial class HtmlConversions
                cellNode.Attributes.Add(colSpanAtt);
                cellNode.Attributes.Add(rowSpanAtt);
 
-               if (thisCell.CellContent is Paragraph p)
-                  cellNode.ChildNodes.Add(GetParagraphNode(p, hdoc));
+                    foreach (Block b in thisCell.CellBlocks)
+                    {
+                        if (b is Paragraph p)
+                            cellNode.ChildNodes.Add(GetParagraphNode(p, hdoc));
+                    }
 
-               rowNode.ChildNodes.Add(cellNode);
+                    rowNode.ChildNodes.Add(cellNode);
             }
          }
 
@@ -136,61 +138,92 @@ internal static partial class HtmlConversions
       }
 
       return tableNode;
-      
+
 
    }
 
- 
+
    private static HtmlNode GetParagraphNode(Paragraph p, HtmlDocument hdoc)
    {
       HtmlNode parnode = hdoc.CreateElement("p");
 
+      bool hasContent = false;
+
       foreach (IEditable ied in p.Inlines)
       {
-         HtmlNode spanNode = hdoc.CreateElement("span");
-
-         switch (ied)
+          switch (ied)
          {
-            case EditableRun erun:
-               spanNode.InnerHtml = WebUtility.HtmlEncode(erun.Text ?? "");
-               spanNode.SetAttributeValue("style", GetInlineStyle(erun));
-               break;
+            case EditableHyperlink elink:
+               {
+                  if (!string.IsNullOrEmpty(elink.LinkDisplayText))
+                  {
+                     var aNode = hdoc.CreateElement("a");
+                     aNode.SetAttributeValue("href", elink.NavigateUri);
+                     aNode.InnerHtml = WebUtility.HtmlEncode(elink.LinkDisplayText ?? "");
+                     aNode.SetAttributeValue("style", GetInlineStyle(elink));
+                     parnode.AppendChild(aNode);
+                     hasContent = true;
+                  }
+                  break;
+               }
 
-            case EditableLineBreak elbreak:
-               spanNode = hdoc.CreateElement("br");
-               break;
+            case EditableRun erun:
+               {
+                  if (!string.IsNullOrEmpty(erun.Text))
+                  {
+                     var spanNode = hdoc.CreateElement("span");
+                     spanNode.InnerHtml = WebUtility.HtmlEncode(erun.Text ?? "");
+                     spanNode.SetAttributeValue("style", GetInlineStyle(erun));
+                     parnode.AppendChild(spanNode);
+                     hasContent = true;
+                  }
+                  break;
+               }
+
+            case EditableLineBreak:
+               {
+                  var brNode = hdoc.CreateElement("br");
+                  parnode.AppendChild(brNode);
+                  hasContent = true;
+                  break;
+               }
 
             case EditableInlineUIContainer eUIC:
-
-               if (eUIC.Child is Image img && img.Source is Bitmap bmp)
                {
-                  using var memStream = new MemoryStream();
-                  bmp.Save(memStream);
-                  var base64 = Convert.ToBase64String(memStream.ToArray());
+                  if (eUIC.GetChild() is Image img && img.Source is Bitmap bmp)
+                  {
+                     using var memStream = new MemoryStream();
+                     bmp.Save(memStream);
+                     var base64 = Convert.ToBase64String(memStream.ToArray());
 
-                  var imgNode = hdoc.CreateElement("img");
-                  imgNode.SetAttributeValue("src", $"data:image/png;base64,{base64}");
-                  imgNode.SetAttributeValue("width", img.Width.ToString());
-                  imgNode.SetAttributeValue("height", img.Height.ToString());
+                     var imgNode = hdoc.CreateElement("img");
+                     imgNode.SetAttributeValue("src", $"data:image/png;base64,{base64}");
+                     imgNode.SetAttributeValue("width", img.Width.ToString());
+                     imgNode.SetAttributeValue("height", img.Height.ToString());
 
-                  parnode.AppendChild(imgNode);
+                     parnode.AppendChild(imgNode);
+                     hasContent = true;
+                  }
+                  break;
                }
-               break;
          }
-         parnode.AppendChild(spanNode);
+      }
+
+      if (!hasContent)
+      {
+         parnode.AppendChild(hdoc.CreateElement("br"));
       }
 
       parnode.SetAttributeValue("style", GetParStyle(p));
-
       return parnode;
-
    }
+
 
    private static string GetParStyle(Paragraph p)
    {
       var parStyle = new StringBuilder();
 
-      if (p.LineSpacing > 0)
+      if (p.LineHeight > 0)
          parStyle.Append($"line-height:{p.LineHeight}px;");
 
       switch (p.TextAlignment)
@@ -245,7 +278,7 @@ internal static partial class HtmlConversions
 
       string? foregroundColor = ToCssColor(run.Foreground, Brushes.Black);
       if (foregroundColor != null)
-         sb.Append($"color:{foregroundColor};"); 
+         sb.Append($"color:{foregroundColor};");
 
       string? backgroundColor = ToCssColor(run.Background, Brushes.Transparent);
       if (backgroundColor != null)
@@ -254,18 +287,24 @@ internal static partial class HtmlConversions
 
       if (run.TextDecorations != null)
       {
+         var decs = new List<string>();
          foreach (var td in run.TextDecorations)
          {
             switch (td.Location)
             {
                case TextDecorationLocation.Underline:
-                  sb.Append("text-decoration:underline;");
+                  decs.Add("underline");
                   break;
                case TextDecorationLocation.Strikethrough:
-                  sb.Append("text-decoration:line-through;");
+                  decs.Add("line-through");
+                  break;
+               case TextDecorationLocation.Overline:
+                  decs.Add("overline");
                   break;
             }
          }
+         if (decs.Count > 0)
+            sb.Append($"text-decoration:{string.Join(' ', decs)};");
       }
 
       if (run.BaselineAlignment == BaselineAlignment.Superscript)

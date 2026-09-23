@@ -4,7 +4,7 @@
 			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
 			 xmlns:resources="using:System.Resources"
 			 mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="450"
-			 xmlns:local="using:AvRichTextBox"
+			 xmlns:local="using:AvRichTextBox" 
 			 x:Class="AvRichTextBox.DebuggerPanel">
 
 	<UserControl.Resources>
@@ -21,14 +21,25 @@
 
 
 	<Border  BorderBrush="Gray" BorderThickness="1.5">
-	<DockPanel DataContext="{Binding FlowDoc}" >
+	<DockPanel  >
+
 		<DockPanel DockPanel.Dock="Top" Background="Coral">
 
 			<Border DockPanel.Dock="Top" BorderBrush="Black" BorderThickness="0.8">
-				<DockPanel>
+				<DockPanel x:DataType="local:FlowDocument">
 					<DockPanel DockPanel.Dock="Left">
-						<TextBlock DockPanel.Dock="Top" Background="LightGray" Text="{Binding Selection.Start, StringFormat='DocSelStart={0}'}"/>
-						<TextBlock Background="LightGray" Text="{Binding Selection.End, StringFormat='DocSelEnd={0}'}"/>
+						
+						<DockPanel DockPanel.Dock="Top">
+							<TextBlock DockPanel.Dock="Left" Width="150" x:Name="SelStartTB"  Background="LightGray" />
+							<TextBlock x:Name="BiasForwardStartTB"  Background="LightGray" />
+						</DockPanel>
+						
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Left" Width="150" x:Name="SelEndTB" Background="LightGray"/>
+							<TextBlock x:Name="BiasForwardEndTB" Background="LightGray" />
+						</DockPanel>
+						
+						
 					</DockPanel>
 				</DockPanel>
 			</Border>
@@ -42,27 +53,28 @@
 			<TextBlock  Grid.Column="3" Text="Inl_Id" TextAlignment="Center" />
 		</Grid>
 
-		<ListBox x:Name="ParagraphsLB"  DockPanel.Dock="Top" ItemsSource="{Binding SelectionParagraphs}" Background="Wheat" BorderBrush="Black" BorderThickness="1" Padding="0" >
+		<ListBox x:Name="ParagraphsLB"  DockPanel.Dock="Top" Background="Wheat" BorderBrush="Black" BorderThickness="1" Padding="0" >
 			<ListBox.ItemTemplate>
-				<DataTemplate x:DataType="{x:Type local:Paragraph}">
+				<DataTemplate x:DataType="local:Paragraph">
 					<DockPanel>
 						<DockPanel DockPanel.Dock="Top" Background="AliceBlue">
 							<TextBlock DockPanel.Dock="Left" Text="{Binding Inlines.Count, StringFormat='Inlines={0}'}"/>
 							<TextBlock Margin="20, 0, 0, 0" Text="{Binding StartInDoc, StringFormat='ParStartIdxInDoc={0}'}" ToolTip.Tip="{Binding ParToolTip}" />
+							<TextBlock Margin="10, 0, 0, 0" Text="{Binding GetID, StringFormat='BlockID={0}'}" />
 						</DockPanel>
 
 
 						<ItemsControl x:Name="InlinesIC" ItemsSource="{Binding Inlines}" Margin="-5, 2, -5, 20"  BorderBrush="DarkBlue" BorderThickness="0.7" >
 							<ItemsControl.ItemTemplate>
-								<DataTemplate x:DataType="{x:Type local:IEditable}">
+								<DataTemplate  x:CompileBindings="False">
 									<Border BorderBrush="Black" BorderThickness="{Binding InlineVP.InlineSelectedBorderThickness}" Background="{Binding InlineVP.BackBrush}">
 										<Grid ColumnDefinitions="50* 15* 10* 10*" HorizontalAlignment="Stretch" ShowGridLines="True" Margin="0" >
-											<Grid x:DataType="{x:Type local:EditableRun}" Margin="3, 0" Grid.Column="0">
+											<Grid  Margin="3, 0" Grid.Column="0" >
 												<Border Background="{StaticResource TableInlineBrush}" IsVisible="{Binding InlineVP.IsTableCellInline}"/>
-												<TextBlock  Text="{Binding DisplayInlineText}" TextWrapping="Wrap" FontWeight="{Binding FontWeight}" FontStyle="{Binding FontStyle}" TextDecorations="{Binding TextDecorations}" ToolTip.Tip="{Binding InlineToolTip}" />
+												<TextBlock  Text="{Binding DisplayInlineText}" TextWrapping="Wrap" FontWeight="{Binding FontWeight, TargetNullValue=FontWeights.Normal}" FontStyle="{Binding FontStyle, TargetNullValue=FontStyles.Normal}" TextDecorations="{Binding TextDecorations}" ToolTip.Tip="{Binding InlineToolTip}" />
 											</Grid>
 											<TextBlock  Grid.Column="1" Text="{Binding TextPositionOfInlineInParagraph}" TextAlignment="Center" />
-											<TextBlock  Grid.Column="2" Text="{Binding InlineText.Length}" TextAlignment="Center" />
+											<TextBlock  Grid.Column="2" Text="{Binding InlineLength}" TextAlignment="Center" />
 											<TextBlock  Grid.Column="3" Text="{Binding Id}" TextAlignment="Center" />
 										</Grid>
 									</Border>

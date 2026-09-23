@@ -12,13 +12,11 @@ internal static partial class WordConversions
    {
       string? thisRunText = "";
       thisRunText = edRun.Text;
-      //Debug.WriteLine("thisRuntext= " + thisRunText);
       
       var newrun = new DOW.Run();
 
       try
       {
-
          var runtext = new Text(thisRunText!) // convert text to "wordprocessing.text" form
          {
             Space = SpaceProcessingModeValues.Preserve
@@ -28,18 +26,13 @@ internal static partial class WordConversions
 
          if (edRun.TextDecorations != null)
          {
-            foreach (TextDecoration td in edRun.TextDecorations!)
+            foreach (TextDecoration td in edRun.TextDecorations)
             {
                switch (td.Location)
                {
-                  case TextDecorationLocation.Underline:
-                     RunProp.AppendChild(new DOW.Underline() { Val = UnderlineValues.Single, Color = "Black" });
-                     break;
-                  case TextDecorationLocation.Overline: { break; }
-                  case TextDecorationLocation.Baseline: { break; }
-                  case TextDecorationLocation.Strikethrough:
-                     RunProp.AppendChild(new DOW.Strike());
-                     break; 
+                  case TextDecorationLocation.Underline: RunProp.AppendChild(new DOW.Underline() { Val = UnderlineValues.Single, Color = "Black" }); break;
+                  case TextDecorationLocation.Strikethrough: RunProp.AppendChild(new DOW.Strike()); break;
+                  case TextDecorationLocation.Overline: break; // Word doesn't inherently support overline, so ignore
                }
             }
          }
@@ -50,9 +43,9 @@ internal static partial class WordConversions
          if (edRun.FontStyle == FontStyle.Italic)
             RunProp.AppendChild(new DOW.Italic());
 
-         if (edRun.Background != null)
+         if (edRun.Background != null && edRun.Background != Brushes.Transparent)
          {
-            var Hlight = new  Highlight() { Val = BrushToHighlightColorValue(edRun.Background) };
+            var Hlight = new Highlight() { Val = BrushToHighlightColorValue(edRun.Background) };
             RunProp.AppendChild(Hlight);
          }
 
@@ -87,14 +80,12 @@ internal static partial class WordConversions
          //Attach run properties
          newrun.AppendChild(RunProp);
 
-         // Must parse line breaks
+         // Must parse line breaks, ignoring empty runs
          if (!string.IsNullOrEmpty(runtext.Text))
          {
-            //if (runtext.GetText.Contains(Constants.vbLf))
             if (runtext.Text.Contains('\n'))
                ParseRunText(ref newrun, runtext.Text);
             else
-
                newrun.AppendChild(runtext);
          }
 
@@ -104,7 +95,7 @@ internal static partial class WordConversions
       return newrun;
    }
 
-   public static void ParseRunText(ref DOW.Run r, string tData)
+   internal static void ParseRunText(ref DOW.Run r, string tData)
    {
       //var newLineArray = new[] { Constants.vbLf };
       //var textArray = tData.Split(newLineArray, StringSplitOptions.None);

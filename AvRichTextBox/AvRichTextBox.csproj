@@ -1,62 +1,68 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- <TargetFramework>net10.0</TargetFramework> -->
     <TargetFramework>$(AvaloniaBuildFramework)</TargetFramework>
     <Nullable>enable</Nullable>
-	  <LangVersion>latest</LangVersion>
-	  <!--Nuget-->
-	  <Authors>Simplectoplasm</Authors>
-	  <Company>---</Company>
-	  <Product>AvRichTextBox</Product>
-	  <PackageId>Simplecto.Avalonia.RichTextBox</PackageId>
-	  <ImplicitUsings>enable</ImplicitUsings>
-	  
-	  <Description>A RichTextBox control to be used in Avalonia</Description>
-	  <PackageTags>Avalonia;UserControl;RichTextBox</PackageTags>
-	  <Title>A RichTextBox control for Avalonia</Title>
-	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
-	  
-	  <RepositoryUrl>https://github.com/cuikp/AvRichTextBox</RepositoryUrl>
-	  <RepositoryType>git</RepositoryType>
-	  <PackageReleaseNotes>ver 1.6.6: fixed GetVisualDescendants() error in Debug mode</PackageReleaseNotes>
+    <LangVersion>latest</LangVersion>
+
+    <!--Nuget-->
+    <Authors>Simplectoplasm</Authors>
+    <Company>---</Company>
+    <Product>AvRichTextBox</Product>
+    <PackageId>Simplecto.Avalonia.RichTextBox</PackageId>
+    <ImplicitUsings>enable</ImplicitUsings>
+    
+    <Description>A RichTextBox control to be used in Avalonia</Description>
+    <PackageTags>Avalonia;UserControl;RichTextBox</PackageTags>
+    <Title>A RichTextBox control for Avalonia</Title>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    
+    <RepositoryUrl>https://github.com/cuikp/AvRichTextBox</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>ver 1.11.2
+Some public method name changes for Col/Row manipulation:
+InsertRows(...)-> InsertRowsAt(...)
+InsertCols(...)-> InsertColsAt(...)
+MergeCellsRight(...)-> MergeCellsRightAt(...)
+MergeCellsDown(...)->MergeCellsDownAt(...)
+`SplitCellVertical`/`SplitCellHorizontal` methods added  (though without Undo/Redo capability)
+Fixed bug with multiple TextDecorations Undo (e.g. Underline+Strikeout)
+Fixed multiple paragraphs in Cells not reading in for XamlPackage/Html</PackageReleaseNotes>
       
-     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
-	  <PackageOutputPath>D:\PROG\LocalNuget\AvRichTextBox</PackageOutputPath>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <PackageOutputPath>D:\PROG\LocalNuget\AvRichTextBox</PackageOutputPath>
     <!--<AvaloniaUseCompiledBindingsByDefault Condition="'$(UseAvaloniaFork)' == 'True'">false</AvaloniaUseCompiledBindingsByDefault>--> 
-	  <Version>1.6.6</Version>
-	  <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-	  <AssemblyVersion>1.0.0.0</AssemblyVersion>
-	  
-	  
+    <Version>1.11.2</Version>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' != 'Release'">
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' != 'Release'">
-		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-	</PropertyGroup>
-
-
-	<!--<PropertyGroup>
-		<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-	</PropertyGroup>-->
-
-
-	<ItemGroup>
+  <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
-  
+  <ItemGroup>
+    <AvaloniaResource Remove="Assets\PublicUndos.docx" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Undo_Redo\EditUndos\UserEditUndos\XXX_User_TextChangedUndo.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Remove="SaveAndLoadFormats\Xaml\XamlPackageData\.rels" />
     <None Remove="SaveAndLoadFormats\Xaml\XamlPackageData\[Content_Types].xml" />
   </ItemGroup>
 
-  
   <ItemGroup>
     <AvaloniaResource Include="SaveAndLoadFormats\Xaml\XamlPackageData\.rels" />
     <AvaloniaResource Include="SaveAndLoadFormats\Xaml\XamlPackageData\[Content_Types].xml" />
@@ -84,22 +90,22 @@
   <Import Condition="'$(UseAvaloniaFork)' == 'True'" Project="$(MSBuildThisFileDirectory)../../iPlus/build/AvaloniaBaseReactiveInclude.props" />
   <!-- End iPlus settings and overrides -->
 
-
   <!--<ItemGroup>
     <Reference Include="RtfDomParserAv">
       <HintPath>RtfDomParserAv.dll</HintPath>
     </Reference>
+    <None Include="RtfDomParserAv.dll" Pack="true" PackagePath="lib\$(TargetFramework)\" />
   </ItemGroup>-->
-	
-	<ItemGroup>
-    <Compile Update="FlowDocument\FlowDocument_RangeXaml.cs">
+
+  <ItemGroup>
+    <Compile Update="FlowDocument\FlowDocument_SelectionGetNextPos.cs">
       <DependentUpon>%(Filename)</DependentUpon>
     </Compile>
     <Compile Update="RichTextBox\RichTextBoxInputClient.cs">
       <SubType>Code</SubType>
       <DependentUpon>%(Filename)</DependentUpon>
     </Compile>
-    <Compile Update="RichTextBox\RichTextBox_SelectionRect.cs">
+    <Compile Update="RichTextBox\RichTextBox_SelectionChanged.cs">
       <DependentUpon>%(Filename)</DependentUpon>
     </Compile>
     <Compile Update="RichTextBox\RichTextBox_PointerEvents.cs">
@@ -131,14 +137,16 @@
   <ItemGroup>
     <Using Include="Avalonia" />
     <Using Include="Avalonia.Input" />
+    <Using Include="AvRichTextBox.StaticProperties">
+      <Static>True</Static>
+    </Using>
     <Using Include="System.Diagnostics" />
   </ItemGroup>
 
-	<ItemGroup>
-		<None Include="..\README.md">
-			<Pack>True</Pack>
-			<PackagePath>\</PackagePath>
-		</None>
-	</ItemGroup>
-
+  <ItemGroup>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 </Project>

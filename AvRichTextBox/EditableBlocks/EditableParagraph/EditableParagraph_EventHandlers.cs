@@ -4,23 +4,14 @@ namespace AvRichTextBox;
 
 internal partial class EditableParagraph
 {
-   public delegate void MouseMoveHandler(EditableParagraph sender, int charIndex);
-    public event MouseMoveHandler? MouseMove;
+    internal delegate void MouseMoveHandler(EditableParagraph sender, int charIndex);
+    internal event MouseMoveHandler? MouseMove;
 
-    public delegate void SelectionStartRectChangedHandler(EditableParagraph sender);
-    public event SelectionStartRectChangedHandler? SelectionStartRect_Changed;
+    internal delegate void MouseLeaveHandler(EditableParagraph sender);
+    internal event MouseLeaveHandler? MouseLeave;
 
-    public delegate void SelectionEndRectChangedHandler(EditableParagraph sender);
-    public event SelectionEndRectChangedHandler? SelectionEndRect_Changed;
-
-   //public delegate void TextChangedHandler(EditableParagraph sender);
-   //public event TextChangedHandler? EditableParagraph_TextChanged;
-
-   //public delegate void CharIndexRectNotifiedHandler(EditableParagraph sender, Rect selEndRect);
-   //public event CharIndexRectNotifiedHandler? CharIndexRect_Notified;
-
-   //public delegate void KeyDownHandler(EditableParagraph sender, double hitPositionFromLeft);
-   //public new event KeyDownHandler? KeyDown;
+    //internal delegate void KeyDownHandler(EditableParagraph sender, double hitPositionFromLeft);
+    //internal new event KeyDownHandler? KeyDown;
 
 
 }

@@ -1,7 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using AvRichTextBox;
+using DynamicData;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,256 +18,290 @@ namespace DemoApp_AvRichtextBox.Views;
 
 public partial class MainWindow : Window
 {
+    public MainWindow()
+    {
+        InitializeComponent();
 
-   public static List<string> GetAllFonts 
-   {
-      get
-      {
-         List<string> returnList = [];
-         foreach (var font in FontManager.Current.SystemFonts)
-            returnList.Add(font.Name);
-         return returnList;
-      }
-      
-   }
+        Loaded += MainWindow_Loaded;
 
-   public MainWindow()
-   {
-      InitializeComponent();
+        FontsCB.ItemsSource = GetAllFonts;
 
-      Loaded += MainWindow_Loaded;
-    
-      FontsCB.ItemsSource = GetAllFonts;
+        UnderCB.AddHandler(InputElement.PointerReleasedEvent, UnderCB_PointerReleased, RoutingStrategies.Tunnel);
+        StrikeCB.AddHandler(InputElement.PointerReleasedEvent, StrikeCB_PointerReleased, RoutingStrategies.Tunnel);
+        OverCB.AddHandler(InputElement.PointerReleasedEvent, OverCB_PointerReleased, RoutingStrategies.Tunnel);
 
-   }
+    }
 
-   private void MainWindow_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-   {
-      MainRTB.FlowDocument.Selection_Changed += FlowDocument_Selection_Changed;
+    private void MainWindow_Loaded(object? sender, RoutedEventArgs e)
+    {
+        MainRTB.FlowDocument.SelectionChanged += FlowDocument_Selection_Changed;
+
 
 #if DEBUG
-      
-      DockPanel debugCBPanel = new () { VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom };
-      TextBlock debugTB = new () { Text = "DebugPanel" };
-      CheckBox debugCB = new() { Focusable = false };
-      debugCB.IsCheckedChanged += DebugPanelCB_CheckedUnchecked;
-      debugCB.IsChecked = true;
-      debugCBPanel.Children.Add(debugTB);
-      debugCBPanel.Children.Add(debugCB);
-      DockPanel.SetDock(debugTB, Dock.Top);
-      TopStackPanel.Children.Add(debugCBPanel);
-      
+
+        DockPanel debugCBPanel = new() { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(10) };
+        TextBlock debugTB = new() { Text = "DebugPanel", VerticalAlignment = VerticalAlignment.Center };
+        CheckBox debugCB = new() { Focusable = false };
+        debugCB.IsCheckedChanged += DebugPanelCB_CheckedUnchecked;
+        debugCB.IsChecked = MainRTB.ShowDebuggerPanelInDebugMode;
+        debugCBPanel.Children.Add(debugCB);
+        debugCBPanel.Children.Add(debugTB);
+        debugCBPanel.IsVisible = MainRTB.ShowDebuggerPanelInDebugMode;
+        TopPanel.Children.Add(debugCBPanel);
+
+        //CreateTestDocumentWithTable();
+        //OpenTestDocument();
+
 #endif
 
-      progChange = false;
-            
+        progChange = false;
+                        
 
-   }
+    }
 
-   private void CreateNewDocumentMenuItem_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-   {
-      MainRTB.CreateNewDocument();
-      
-   }
+    public static List<string> GetAllFonts
+    {
+        get
+        {
+            List<string> returnList = [];
+            foreach (var font in FontManager.Current.SystemFonts)
+                returnList.Add(font.Name);
+            return returnList;
+        }
 
-   private void ShowPagePaddingValue()
-   {
-      PagePaddingNSL.Value = MainRTB.FlowDocument.PagePadding.Left;
-      PagePaddingNSR.Value = MainRTB.FlowDocument.PagePadding.Right;
-      PagePaddingNST.Value = MainRTB.FlowDocument.PagePadding.Top;
-      PagePaddingNSB.Value = MainRTB.FlowDocument.PagePadding.Bottom;
-   }
+    }
 
+    internal void OpenTestDocument()
+    {
+        string testdoc = Path.Combine(AppContext.BaseDirectory, "TestFiles\\TestDocumentXamlPackage.xamlp");
+        MainRTB.LoadXamlPackage(testdoc);
+        OpenFilePath = testdoc;
 
-   private void FindTextBox_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
-   {
-      FindTB.Background = Brushes.White;
+        TextRange newTR = new (MainRTB.FlowDocument, 743, 765);
+        TextRange newTR2 = new (MainRTB.FlowDocument, 166, 186);
+        
 
-      if (e.Key == Avalonia.Input.Key.Enter)
-      {
-         PerformFind();
-         e.Handled = true;
-      }
-         
-   }
+    }
 
-   private void FindTextBox_GotFocus(object? sender, Avalonia.Input.GotFocusEventArgs e)
-   {
-      FindTB.Background = Brushes.White;
-      this.FindTB.Focus();
-   }
+    internal void CreateTestDocumentWithTable()
+    {        
 
-   private void FindTextBox_LostFocus(object? sender, Avalonia.Input.GotFocusEventArgs e)
-   {
-      FindTB.Background = Brushes.LightGray;
-      
-   }
+        MainRTB.FlowDocument.ClearBlocks();
 
-   private void FindButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-   {
-      PerformFind();
+               
+        Paragraph newPar = new();
 
-   }
+        newPar.InsertInlinesAt(0, [
+            new EditableRun("A "),
+            new EditableRun("first line with super/subscripts:"),
+            new EditableRun(" H"),
+            new EditableRun("2") { BaselineAlignment = BaselineAlignment.Subscript },
+            new EditableRun("O"),
+            new EditableRun(" at 2 g/m") { },
+            new EditableRun("3") { BaselineAlignment = BaselineAlignment.Superscript },
+            new EditableRun(", and a simple hyperlink: "),
+            new EditableHyperlink("go to google", @"https://www.google.com"),
+            new EditableRun(" for testing.")
+        ]);
 
-   private void PerformFind()
-   {
-      FindTB.Background = Brushes.White;
+        MainRTB.FlowDocument.InsertBlockAt(MainRTB.FlowDocument.GetBlocks.Count(), newPar);
 
-      if (string.IsNullOrEmpty(FindTB.Text)) return;
+        Paragraph secondPar = new();
+        secondPar.InsertInlineAt(0, new EditableRun("A second paragraph just before the table."));
+        MainRTB.FlowDocument.InsertBlockAt(MainRTB.FlowDocument.GetBlocks.Count(), secondPar);
 
-      MatchCollection foundMatches = Regex.Matches(MainRTB.FlowDocument.Text.Replace("\r\n", "\r"), FindTB.Text);  
-      Match? firstMatch = foundMatches.FirstOrDefault(m => m.Index >= MainRTB.FlowDocument.Selection.End);
-      if (firstMatch != null)
-      {
-         MainRTB.FlowDocument.Select(firstMatch.Index, FindTB.Text.Length);
-         MainRTB.ScrollToSelection();
-      }
-      else
-      {
-         FindTB.Background = Brushes.Coral;
-         FindBut.Focus();
-      }
-         
+        newPar.InsertInlineAt(newPar.GetInlines.Count() - 1, new EditableRun(" mostly and predominantly"));
 
-   }
-
-   internal void PagePaddingNSL_ValueChanged(double value)
-   {
-      Thickness p = MainRTB.FlowDocument.PagePadding;
-      MainRTB.FlowDocument.PagePadding = new Thickness(PagePaddingNSL.Value, p.Top, p.Right, p.Bottom);
-   }
-
-   internal void PagePaddingNST_ValueChanged(double value)
-   {
-      Thickness p = MainRTB.FlowDocument.PagePadding;
-      MainRTB.FlowDocument.PagePadding = new Thickness(p.Left, PagePaddingNST.Value, p.Right, p.Bottom);
-   }
-
-   internal void PagePaddingNSR_ValueChanged(double value)
-   {
-      Thickness p = MainRTB.FlowDocument.PagePadding;
-      MainRTB.FlowDocument.PagePadding = new Thickness(p.Left, p.Top, PagePaddingNSR.Value, p.Bottom);
-   }
-
-   internal void PagePaddingNSB_ValueChanged(double value)
-   {
-      Thickness p = MainRTB.FlowDocument.PagePadding;
-      MainRTB.FlowDocument.PagePadding = new Thickness(p.Left, p.Top, p.Right, PagePaddingNSB.Value);
-   }
+        newPar.InsertInlinesAt(newPar.GetInlines.Count(), [
+            new EditableRun("  Also "),
+            new EditableRun("don't forget "),
+            new EditableRun("CO"),
+            new EditableRun("2") { BaselineAlignment = BaselineAlignment.Subscript },
+            new EditableRun(" at 5 g/m") { },
+            new EditableRun("3") { BaselineAlignment = BaselineAlignment.Superscript },
+            new EditableRun(", for good measure.")
+        ]);
 
 
-   bool progChange = true;
+        //Test Table
+        int noCols = 5;
+        int noRows = 4;
+        Table newTable = new(noCols, noRows, MainRTB.FlowDocument) { BorderThickness = new(1), BorderBrush = Brushes.ForestGreen, TableAlignment = HorizontalAlignment.Center };
+               
 
-   private void FlowDocument_Selection_Changed(TextRange selection)
-   {
-      FontSizeNS.Value = Math.Round((double)(selection.GetFormatting(FontSizeProperty) ?? 14D));
-
-      object? selFFP = selection.GetFormatting(FontFamilyProperty);
-      if (selFFP != null)
-      {
-         FontFamily ffamily = (FontFamily)selFFP;
-         FontsCB.SelectedItem = ffamily.ToString();
-      }
-
-      if (selection.GetStartPar() is not Paragraph selPar) return;
-      if (!progChange)
-      {
-         progChange = true;
-         LineSpacingNS.Value = selPar.LineSpacing;
-         ParagraphBorderNS.Value = selPar.BorderThickness.Left;
-         ParBorderCP.Color = selPar.BorderBrush.Color;
-         ParBackgroundCP.Color = selPar.Background.Color;
-         progChange = false;
-      }
-
-   }
-
-   internal void FontSizeNS_UserValueChanged(double value)
-   {
-      MainRTB.FlowDocument.Selection.ApplyFormatting(FontSizeProperty, value);
-
-   }
-
-   internal void LineSpacingNS_UserValueChanged(double value)
-   {
-      foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
-         p.LineSpacing = value;
-   }
-
-   internal void ParagraphBorderNS_UserValueChanged(double value)
-   {
-      foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
-         p.BorderThickness = new Thickness(value);
-         
-   }
-
-   private void ParBorder_ColorChanged(object? sender, ColorChangedEventArgs e)
-   {
-      if (progChange) return;
-      SolidColorBrush hBrush = new(e.NewColor);
-      foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
-         p.BorderBrush = hBrush;
-            
-   }
-
-   private void ParBackground_ColorChanged(object? sender, ColorChangedEventArgs e)
-   {
-      if (progChange) return;
-      SolidColorBrush hBrush = new(e.NewColor);
-      foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
-         p.Background = hBrush;
-      
-   }
-
-
-   private void FontCP_ColorChanged(object? sender, ColorChangedEventArgs e)
-   {
-      SolidColorBrush hBrush = new (e.NewColor);
-      MainRTB.FlowDocument.Selection.ApplyFormatting(ForegroundProperty, hBrush);
-   }
-   
-   private void HighlightCP_ColorChanged(object? sender, ColorChangedEventArgs e)
-   {
-      SolidColorBrush hBrush = new (e.NewColor);
-      MainRTB.FlowDocument.Selection.ApplyFormatting(BackgroundProperty, hBrush);
-   }
-
-#if DEBUG
-   private void DebugPanelCB_CheckedUnchecked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-   {
-      if (sender is CheckBox thisCB && MainRTB != null)
-         MainRTB.ShowDebuggerPanelInDebugMode = thisCB.IsChecked is bool b && b;
-   }
-#endif
-
-   private void FontsComboBox_DropDownClosed(object? sender, System.EventArgs e)
-   {
-      if (sender is ComboBox comboBox && comboBox.SelectedItem != null)
-      {
-         string? newFont = comboBox.SelectedItem.ToString();
-         if (newFont != null)
-            MainRTB.FlowDocument.Selection.ApplyFormatting(FontFamilyProperty, new FontFamily(newFont));
-      }
-
-   }
-
-   private void JustificationComboBox_DropDownClosed(object? sender, System.EventArgs e)
-   {
-      if (sender is ComboBox cbox && cbox.SelectedItem is ComboBoxItem cbitem)
-      {
-         if (cbitem.Content is string selJust && MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph p)
-         {
-            p.TextAlignment = selJust switch
+        for (int rowno = 0; rowno < noRows; rowno++)
+        {
+            for (int colno = 0; colno < noCols; colno++)
             {
-               "Left" => TextAlignment.Left,
-               "Center" => TextAlignment.Center,
-               "Right" => TextAlignment.Right,
-               "Justified" => TextAlignment.Justify,
-               _ => TextAlignment.Left
-            };
-         }
-      }
-      
+                int cellno = rowno * noCols + colno;
+                if (newTable.GetCells.ElementAt(cellno) is Cell c)
+                {
+                    c.CellVerticalAlignment = VerticalAlignment.Center;
+                    Paragraph p = new() { TextAlignment = TextAlignment.Center };
+                    p.AddInline(new EditableRun("col:" + colno));
+                    p.AddInline(new EditableLineBreak());
+                    p.AddInline(new EditableRun("row:" + rowno));
 
-   }
+                    c.InsertBlockAt(0, p);
+                    c.RemoveBlockAt(c.GetCellBlocks.Count() - 1);
+                }
+            }
+        }
+                
+
+        MainRTB.FlowDocument.InsertBlockAt(MainRTB.FlowDocument.GetBlocks.Count(), newTable);
+
+        //Paragraph newnewPar = new();
+        //newnewPar.AddInline(new EditableRun("Added text in the cell"));
+        //newTable.GetCells.ElementAt(0).InsertBlockAt(0, newnewPar);
+
+
+        Paragraph newPar2 = new();
+        newPar2.AddInline(new EditableRun("Some extra text after the table."));
+        MainRTB.FlowDocument.InsertBlockAt(MainRTB.FlowDocument.GetBlocks.Count(), newPar2);
+
+        MainRTB.FlowDocument.RemoveBlockAt(0); //Remove the default paragraph that remains at start
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            MainRTB.UpdateLayout();
+            MainRTB.FlowDocument.Select(0, 0);
+        });
+
+        //Merge cells
+        newTable.MergeCellsRightAt(rowNo: 1, colNo: 1, numberCellsToMerge: 1);
+        newTable.MergeCellsDownAt(rowNo: 1, colNo: 3, numberCellsToMerge: 1);
+
+        //newTable.InsertColumns(0, 1);
+
+
+
+
+    }
+
+ 
+
+    private void CreateNewDocumentMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        MainRTB.CreateNewDocument();
+
+    }
+      
+    private void FindTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        FindTB.Background = Brushes.White;
+
+        if (e.Key == Key.Enter)
+        {
+            PerformFind();
+            e.Handled = true;
+        }
+
+    }
+
+    private void FindTextBox_GotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        FindTB.Background = Brushes.White;
+        this.FindTB.Focus();
+    }
+
+    private void FindTextBox_LostFocus(object? sender, FocusChangedEventArgs e)
+    {
+        FindTB.Background = Brushes.LightGray;
+
+    }
+
+    private void FindButton_Click(object? sender, RoutedEventArgs e)
+    {
+        PerformFind();
+
+    }
+
+    private void AddTableButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.Length > 0) return;
+        int currentStart = MainRTB.FlowDocument.Selection.Start;
+        MainRTB.FlowDocument.InsertParagraphAt(currentStart);
+        MainRTB.FlowDocument.Select(currentStart + 1, 0);
+
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is not Paragraph currParagraph) return;
+        //int insertParIndex = MainRTB.FlowDocument.Blocks.IndexOf(currParagraph);
+        int insertParIndex = MainRTB.FlowDocument.GetBlocks.IndexOf(currParagraph);
+        
+
+        int noCols = Convert.ToInt32(AddColsNS.Value);
+        int noRows = Convert.ToInt32(AddRowsNS.Value);
+
+        Table newTable = new (noCols, noRows, MainRTB.FlowDocument);
+
+        //MainRTB.FlowDocument.Blocks.Insert(insertParIndex, newTable);
+        MainRTB.FlowDocument.InsertBlockAt(insertParIndex, newTable);
+
+        int endOfTable = currentStart + noCols * noRows;
+        MainRTB.FlowDocument.Select(endOfTable, 0);
+
+     
+    }
+
+    
+    private async void PerformFind()
+    {
+        FindTB.Background = Brushes.White;
+
+        if (string.IsNullOrEmpty(FindTB.Text)) return;
+
+        MatchCollection foundMatches = Regex.Matches(MainRTB.FlowDocument.Text, FindTB.Text);
+
+        Match? firstMatch = foundMatches.FirstOrDefault(m => m.Index >= MainRTB.FlowDocument.Selection.End);
+
+        //Debug.WriteLine("foundmathidx = " + firstMatch.Index);
+
+        if (firstMatch != null)
+        {
+            MainRTB.FlowDocument.Select(firstMatch.Index, FindTB.Text.Length);
+
+            bool isOutOfView = MainRTB.FlowDocument.Selection.GetStartRect.Y < MainRTB.GetVerticalScroll || MainRTB.FlowDocument.Selection.GetStartRect.Y > MainRTB.GetVerticalScroll + MainRTB.Bounds.Height;
+            
+            if (isOutOfView)
+                MainRTB.ScrollToSelection();
+
+        }
+        else
+        {
+            FindTB.Background = Brushes.Coral;
+            FindBut.Focus();
+        }
+
+    }
+
+    private void AddNewTRButton_Click(object? sender, RoutedEventArgs e)
+    {
+        TextRange newTR = new(MainRTB.FlowDocument, MainRTB.FlowDocument.Selection.Start, MainRTB.FlowDocument.Selection.End);
+
+    }
+
+    private void DeleteTRButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (TRCombo.SelectedItem is not TextRange trange) return;
+
+        MainRTB.FlowDocument.TextRanges.Remove(trange);
+
+        MainRTB.FlowDocument.Selection.CollapseToStart();
+    }
+
+    private void TextRangesComboBox_DropDownClosed(object? sender, EventArgs e)
+    {
+        if (sender is not ComboBox thisCB) return;
+        if (thisCB.SelectedItem is not TextRange trange) return;
+
+        MainRTB.FlowDocument.Select(trange.Start, trange.Length);
+
+        bool isOutOfView = trange.GetStartRect.Y < MainRTB.GetVerticalScroll || trange.GetStartRect.Y > MainRTB.GetVerticalScroll + MainRTB.Bounds.Height;
+        if (isOutOfView)
+            MainRTB.ScrollToSelection();
+
+
+    }
+
+
 }

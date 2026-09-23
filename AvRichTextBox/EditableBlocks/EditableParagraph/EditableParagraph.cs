@@ -1,167 +1,277 @@
 ﻿using Avalonia.Controls;
-using Avalonia.Input;
+using Avalonia.Controls.Presenters;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace AvRichTextBox;
 
-internal partial class EditableParagraph : SelectableTextBlock
+internal partial class EditableParagraph : TextBlock
 {
-   public static readonly StyledProperty<bool> TextLayoutInfoStartRequestedProperty = AvaloniaProperty.Register<EditableParagraph, bool>(nameof(TextLayoutInfoStartRequested));
-   public bool TextLayoutInfoStartRequested { get => GetValue(TextLayoutInfoStartRequestedProperty); set { SetValue(TextLayoutInfoStartRequestedProperty, value); } }
+    internal static readonly StyledProperty<bool> TextLayoutInfoStartRequestedProperty = AvaloniaProperty.Register<EditableParagraph, bool>(nameof(TextLayoutInfoStartRequested));
+    internal bool TextLayoutInfoStartRequested { get => GetValue(TextLayoutInfoStartRequestedProperty); set { SetValue(TextLayoutInfoStartRequestedProperty, value); } }
 
-   public static readonly StyledProperty<bool> TextLayoutInfoEndRequestedProperty = AvaloniaProperty.Register<EditableParagraph, bool>(nameof(TextLayoutInfoEndRequested));
-   public bool TextLayoutInfoEndRequested { get => GetValue(TextLayoutInfoEndRequestedProperty); set { SetValue(TextLayoutInfoEndRequestedProperty, value); } }
+    internal static readonly StyledProperty<bool> TextLayoutInfoEndRequestedProperty = AvaloniaProperty.Register<EditableParagraph, bool>(nameof(TextLayoutInfoEndRequested));
+    internal bool TextLayoutInfoEndRequested { get => GetValue(TextLayoutInfoEndRequestedProperty); set { SetValue(TextLayoutInfoEndRequestedProperty, value); } }
 
-   public bool IsEditable { get; set; } = true;
+    public bool IsEditable { get; set; } = true;
 
-   public int SelectionLength => SelectionEnd - SelectionStart;
+    Paragraph? ThisPar => this.DataContext as Paragraph;
 
-   Paragraph? ThisPar => this.DataContext as Paragraph;
+    internal int RectCharacterIndex = 0;
 
-   public int RectCharacterIndex = 0;
-   
-   public EditableParagraph()
-   {
-      this.Loaded += EditableParagraph_Loaded;
-      this.PropertyChanged += EditableParagraph_PropertyChanged;
-      this.GotFocus += EditableParagraph_GotFocus;
-      this.LostFocus += EditableParagraph_LostFocus;
+    public EditableParagraph()
+    {
+        
+        this.Loaded += EditableParagraph_Loaded;
+        this.PropertyChanged += EditableParagraph_PropertyChanged;
 
-      FontFeatures = [ new FontFeature { Tag = "liga", Value = 0 } ]; // fix wrong hit testing with some font/letter combinations
+        this.MouseMove += EditableParagraph_MouseMove;
 
-      //this.KeyDown += EditableParagraph_KeyDown;
-   }
+        this.SizeChanged += EditableParagraph_SizeChanged;
 
-   private void EditableParagraph_Loaded(object? sender, RoutedEventArgs e)
-   {
-      UpdateInlines();
-      
-      if (this.DataContext is not Paragraph thisPar) return;
+        FontFeatures = [new FontFeature { Tag = "liga", Value = 0 }]; // fix wrong hit testing with some font/letter combinations
 
-      if (Inlines?.Count == 0)
-         thisPar.Inlines.Add(new EditableRun(""));
+        //this.KeyDown += EditableParagraph_KeyDown;
 
-      List<int> lineBreakIndexes = Inlines.OfType<EditableLineBreak>().ToList().ConvertAll(elb => Inlines.IndexOf(elb));
-      for (int idx = lineBreakIndexes.Count - 1; idx >= 0; idx--)
-      {
-         int elbIdx = lineBreakIndexes[idx];
-         if (elbIdx == 0 || (Inlines[elbIdx - 1] is EditableRun erun && erun.Text != ""))
-            thisPar.Inlines.Insert(elbIdx + 1, new EditableRun(""));
-      }
-      thisPar.UpdateEditableRunPositions();
-      UpdateInlines();
+        LineSpacing = 0;
 
-   }
-     
-   private void EditableParagraph_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-   {      
-      //Debug.WriteLine("e.propertyName = " + e.Property.Name);
+    }
 
-      if (ThisPar != null)  //because this may be called right after paragraph has been deleted
-      {
-         switch (e.Property.Name)
-         {
-            case "Bounds":
-               //Necessary for initial setting for each created paragraph
-               ThisPar.FirstIndexLastLine = this.TextLayout.TextLines[^1].FirstTextSourceIndex;
-               break;
+    //private void EditableParagraph_LostFocus(object? sender, FocusChangedEventArgs e) { throw new NotImplementedException(); } 
+    //private void EditableParagraph_MouseLeave(EditableParagraph sender) { throw new NotImplementedException(); }
 
-            //case "Inlines":
-            //   UpdateVMFromEPStart();
-            //   UpdateVMFromEPEnd();
-            //   break;
-                    
-            case "LineSpacing":
-               this.UpdateLayout();
+    internal bool IsOverHyperlink = false;
+    internal EditableHyperlink CurrentOverHyperlink = null!;
 
-               if (TextLayout != null && TextLayout.TextLines.Count > 0)
-               {
-                  double maxLineHeight = Math.Max(TextLayout.TextLines[0].Height, TextLayout.TextLines[^1].Height);
-                  ThisPar.LineHeight = maxLineHeight;
-               }
-               //Debug.WriteLine("\nline spacing changed: LINESpacing = " + this.LineSpacing);
+    internal void EditableParagraph_MouseMove(EditableParagraph sender, int charIndex)
+    {
 
-               break;
+        if (ThisPar?.Inlines.FirstOrDefault(il => il.TextPositionOfInlineInParagraph <= charIndex && il.TextPositionOfInlineInParagraph + il.InlineLength >= charIndex) is EditableHyperlink currentHyperlink)
+        {
+            IsOverHyperlink = true;
+            CurrentOverHyperlink = currentHyperlink;
+        }
+        else
+        {
+            IsOverHyperlink = false;
+            CurrentOverHyperlink = null!;
+        }
 
-            case "SelectionStart":
-               UpdateVMFromEPStart();
-               break;
+    }
 
-            case "SelectionEnd":
-               UpdateVMFromEPEnd();
-               break;
+    private ItemsControl myDocIC = null!;
 
-            case "SelectedText":
-               ThisPar.UpdateUIContainersSelected(SelectionStart, SelectionEnd);  // changes image opacity to visualize its selection
-               break;
+    private ItemsControl GetDocIC => ThisPar == null ? null! : ThisPar.IsTableCellBlock switch
+    {
+        //Dig back to get top itemscontrol from paragraph cell:
+        true => (this.Parent is ContentPresenter cpres &&
+                 cpres.Parent is ItemsControl itemsCont &&
+                 itemsCont.Parent is EditableCell ecell &&
+                 ecell.Parent is Grid gr &&
+                 gr.Parent is ContentPresenter grcp &&
+                 grcp.Parent is EditableTable etable &&
+                 etable.Parent is ContentControl cc &&
+                 cc.Parent is ContentPresenter cp &&
+                 cp.Parent is ItemsControl ic) ? ic : null!,
 
-            case "TextLayoutInfoStartRequested":
-               this.SetValue(TextLayoutInfoStartRequestedProperty, false);
-               if (ThisPar == null)
-                  Dispatcher.UIThread.Post(() => UpdateVMFromEPStart(), DispatcherPriority.Background);
-                else
-                  UpdateVMFromEPStart();
-               break;
+        //Dig back to get itemscontrol from normal paragraph:
+        false => (this.Parent is Border b &&
+                 b.Parent is ContentControl cc &&
+                 cc.Parent is ContentPresenter cp &&
+                 cp.Parent is ItemsControl ic) ? ic : null!
+    };
 
-            case "TextLayoutInfoEndRequested":
-               this.SetValue(TextLayoutInfoEndRequestedProperty, false);
-               if (ThisPar == null)
-                  Dispatcher.UIThread.Post(() => UpdateVMFromEPEnd(), DispatcherPriority.Background);
-               else   
-                  UpdateVMFromEPEnd();
-               break;
-         }
 
-      }
 
-   }
+    private void EditableParagraph_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (this.DataContext is not Paragraph thisPar) return;
 
-   protected override void OnPointerPressed(PointerPressedEventArgs e) { /*Prevent default behavior*/  }
-   protected override void OnPointerReleased(PointerReleasedEventArgs e) { /* Prevent default behavior*/ }
+        myDocIC = GetDocIC;
 
-   protected override void OnKeyDown(KeyEventArgs e)
-   {
-      //Keep to override default behavior
-      
-      //if (!this.IsFocused)
-      //   e.Handled = true;
-      //UpdateVMFromEPEnd();
-   }
+        //Ensure empty runs (paragraphs)
+        if (thisPar.Inlines.Count == 0)
+            thisPar.Inlines.Add(new EditableRun(""));
 
-   private void EditableParagraph_LostFocus(object? sender, FocusChangedEventArgs e)
-   {
-      this.Focusable = false;
-   }
+        UpdateInlines();
 
-   private void EditableParagraph_GotFocus(object? sender, FocusChangedEventArgs e)
-   {
-      this.Focusable = true;
-   }
-   
-   protected override void OnPointerMoved(PointerEventArgs e)
-   {
-      TextHitTestResult result = this.TextLayout.HitTestPoint(e.GetPosition(this));
-      MouseMove?.Invoke(this, result.TextPosition);
-   }
 
- 
-   public new string Text => this.DataContext is Paragraph p ? string.Join("", p.Inlines.ToList().ConvertAll(edinline => edinline.InlineText)) : "";
+        thisPar.UpdateEditableRunPositions();
+        UpdateInlines();
 
-   public int TextLength
-   {
-      get
-      {
-         int len = 0;
-         if (this.DataContext is Paragraph p)
-         {
-            foreach (var i in p.Inlines)
-               len += i.InlineText?.Length ?? 0;
-         }
-         return len;
-      }
-   }
+
+    }
+
+    private void EditableParagraph_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        //Debug.WriteLine("e.propertyName = " + e.Property.Name);
+
+        if (ThisPar != null)  //because this may be called right after paragraph has been deleted
+        {
+            switch (e.Property.Name)
+            {
+                case "Margin":
+                case "BorderThickness":
+
+                    UpdateParRelativePos();
+                    break;
+
+                case "Bounds":
+                    //Necessary for initial setting for each created paragraph
+                    ThisPar.FirstIndexLastLine = this.TextLayout.TextLines[^1].FirstTextSourceIndex;
+                    break;
+
+                //case "Inlines":
+                //   UpdateVMFromEPStart();
+                //   UpdateVMFromEPEnd();
+                //   break;
+
+                case "LineSpacing":
+                    //this.UpdateLayout();
+
+                    //if (TextLayout != null && TextLayout.TextLines.Count > 0)
+                    //{
+                    //   double maxLineHeight = Math.Max(TextLayout.TextLines[0].Height, TextLayout.TextLines[^1].Height);
+                    //   ThisPar.LineHeight = maxLineHeight;
+                    //}
+                    ////Debug.WriteLine("\nline spacing changed: LINESpacing = " + this.LineSpacing);
+
+                    break;
+
+
+                case "TextLayoutInfoStartRequested":
+                    this.SetValue(TextLayoutInfoStartRequestedProperty, false);
+                    if (ThisPar == null)
+                        Dispatcher.UIThread.Post(() => UpdateVMFromEPStart(), DispatcherPriority.Background);
+                    else
+                        UpdateVMFromEPStart();
+                    break;
+
+                case "TextLayoutInfoEndRequested":
+                    this.SetValue(TextLayoutInfoEndRequestedProperty, false);
+                    if (ThisPar == null)
+                        Dispatcher.UIThread.Post(() => UpdateVMFromEPEnd(), DispatcherPriority.Background);
+                    else
+                        UpdateVMFromEPEnd();
+                    break;
+
+                case "DataContext":
+                    //Debug.WriteLine("datacontext changed");
+                    ThisPar.TextLayout = this.TextLayout;
+
+
+
+                    break;
+            }
+
+        }
+
+    }
+
+    //protected override void OnPointerPressed(PointerPressedEventArgs e) { /*Prevent default behavior*/  }
+    //protected override void OnPointerReleased(PointerReleasedEventArgs e) { /* Prevent default behavior*/ }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        //Keep to override default behavior
+
+        //if (!this.IsFocused)
+        //   e.Handled = true;
+        //UpdateVMFromEPEnd();
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        this.Focusable = false;
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        this.Focusable = true;
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        MouseLeave?.Invoke(this);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        TextHitTestResult result = this.TextLayout.HitTestPoint(e.GetPosition(this));
+        MouseMove?.Invoke(this, result.TextPosition);
+
+    }
+
+
+    internal new string Text => this.DataContext is Paragraph p ? string.Join("", p.Inlines.ToList().ConvertAll(edinline => edinline.InlineText)) : "";
+
+    internal int TextLength
+    {
+        get
+        {
+            int len = 0;
+            if (this.DataContext is Paragraph p)
+            {
+                foreach (var i in p.Inlines)
+                    len += i.InlineText?.Length ?? 0;
+            }
+            return len;
+        }
+
+
+    }
+
+    private void EditableParagraph_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        RecalculateFullRowHeight();
+    }
+
+    internal void RecalculateFullRowHeight()
+    {
+        if (this.DataContext is not Paragraph thisPar) return;
+        if (!thisPar.IsCellBlock) return;
+        if (thisPar.OwningTable is not Table thisTable) return;
+        if (thisPar.OwningCell is not Cell thisCell) return;
+        if (this.Parent is not ContentPresenter contPres || contPres.Parent is not ItemsControl itemsControl) return;
+        //Debug.WriteLine("\nnew size height = " + e.NewSize);
+
+        double minCellContentHeight = thisTable.RowDefs[thisCell.RowNo].MinHeight;
+
+        if (itemsControl.FindAncestorOfType<ItemsControl>() is ItemsControl tableIC)
+        {
+            if (tableIC?.GetVisualDescendants().OfType<ItemsPresenter>().FirstOrDefault() is ItemsPresenter presenter)
+            {
+                if (presenter?.GetVisualDescendants().OfType<BindableGrid>().FirstOrDefault() is BindableGrid bgrid)
+                {
+                    List<EditableCell> rowECs = [.. bgrid.GetVisualDescendants().OfType<EditableCell>().Where(ec => ec.DataContext is Cell c && c.RowNo == thisCell.RowNo)];
+                    if (rowECs.Count > 0)
+                    {
+                        minCellContentHeight = Math.Max(minCellContentHeight, rowECs.Max(GetWantedCellHeight));
+                        itemsControl.Measure(new Size(itemsControl.Bounds.Width, double.PositiveInfinity));
+                        var wantedHeight = Math.Ceiling(itemsControl.DesiredSize.Height + thisCell.Padding.Top + thisCell.Padding.Bottom);
+                        
+                        thisTable.RowDefs[thisCell.RowNo].Height = new GridLength(Math.Max(minCellContentHeight, wantedHeight));
+                    }
+                }
+            }
+        }
+
+    }
+
+    double GetWantedCellHeight(EditableCell ec)
+    {
+        if (ec.GetVisualDescendants().OfType<ItemsControl>().FirstOrDefault() is not ItemsControl ic)
+            return ec.Bounds.Height;
+
+        ic.Measure(new Size(ic.Bounds.Width, double.PositiveInfinity));
+        return Math.Ceiling(ic.DesiredSize.Height + ec.Padding.Top + ec.Padding.Bottom);
+    }
+
 
 }
 

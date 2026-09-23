@@ -1,0 +1,376 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Documents;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using AvRichTextBox;
+using System;
+using System.Diagnostics;
+using System.Linq;
+
+namespace DemoApp_AvRichtextBox.Views;
+
+public partial class MainWindow
+{
+
+    internal void PagePaddingNSL_ValueChanged(double value)
+    {
+        if (progChange) return;
+        Thickness p = MainRTB.FlowDocument.PagePadding;
+        MainRTB.FlowDocument.PagePadding = new Thickness(PagePaddingNSL.Value, p.Top, p.Right, p.Bottom);
+    }
+
+    internal void PagePaddingNST_ValueChanged(double value)
+    {
+        if (progChange) return;
+        Thickness p = MainRTB.FlowDocument.PagePadding;
+        MainRTB.FlowDocument.PagePadding = new Thickness(p.Left, PagePaddingNST.Value, p.Right, p.Bottom);
+    }
+
+    internal void PagePaddingNSR_ValueChanged(double value)
+    {
+        if (progChange) return;
+        Thickness p = MainRTB.FlowDocument.PagePadding;
+        MainRTB.FlowDocument.PagePadding = new Thickness(p.Left, p.Top, PagePaddingNSR.Value, p.Bottom);
+    }
+
+    internal void PagePaddingNSB_ValueChanged(double value)
+    {
+        if (progChange) return;
+        Thickness p = MainRTB.FlowDocument.PagePadding;
+        MainRTB.FlowDocument.PagePadding = new Thickness(p.Left, p.Top, p.Right, PagePaddingNSB.Value);
+    }
+
+    internal void FontSizeNS_UserValueChanged(double value)
+    {
+        MainRTB.FlowDocument.Selection.ApplyFormatting(FontSizeProperty, value);
+
+    }
+
+
+    internal void LineHeightNS_UserValueChanged(double value)
+    {
+        foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
+        {
+            //p.LineSpacing *= 2;
+            p.LineHeight = value;
+        }
+
+    }
+
+    internal void ParagraphBorderNS_UserValueChanged(double value)
+    {
+        foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
+            p.BorderThickness = new Thickness(value);
+
+    }
+
+    private void ParBorder_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (progChange) return;
+        SolidColorBrush hBrush = new(e.NewColor);
+        foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
+            p.BorderBrush = hBrush;
+
+    }
+
+    private void ParBackground_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (progChange) return;
+        SolidColorBrush hBrush = new(e.NewColor);
+        foreach (Paragraph p in MainRTB.FlowDocument.GetSelectedParagraphs)
+            p.Background = hBrush;
+
+    }
+
+
+    private void FontCP_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (progChange) return;
+        SolidColorBrush hBrush = new(e.NewColor);
+        MainRTB.FlowDocument.Selection.ApplyFormatting(ForegroundProperty, hBrush);
+
+    }
+
+    private void HighlightCP_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (progChange) return;
+        SolidColorBrush hBrush = new(e.NewColor);
+        MainRTB.FlowDocument.Selection.ApplyFormatting(BackgroundProperty, hBrush);
+
+    }
+
+#if DEBUG
+    private void DebugPanelCB_CheckedUnchecked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is CheckBox thisCB && MainRTB != null)
+            MainRTB.ShowDebuggerPanelInDebugMode = thisCB.IsChecked is bool b && b;
+    }
+#endif
+
+    private void FontsComboBox_DropDownClosed(object? sender, System.EventArgs e)
+    {
+        if (sender is ComboBox comboBox && comboBox.SelectedItem != null)
+        {
+            string? newFont = comboBox.SelectedItem.ToString();
+            if (newFont != null)
+                MainRTB.FlowDocument.Selection.ApplyFormatting(FontFamilyProperty, new FontFamily(newFont));
+        }
+
+    }
+
+    private void JustificationComboBox_DropDownClosed(object? sender, System.EventArgs e)
+    {
+        if (sender is ComboBox cbox && cbox.SelectedItem is ComboBoxItem cbitem)
+        {
+            if (cbitem.Content is string selJust && MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph p)
+            {
+                p.TextAlignment = selJust switch
+                {
+                    "Left" => TextAlignment.Left,
+                    "Center" => TextAlignment.Center,
+                    "Right" => TextAlignment.Right,
+                    "Justified" => TextAlignment.Justify,
+                    _ => TextAlignment.Left
+                };
+            }
+        }
+
+
+    }
+
+    internal void RTBZoomNS_UserValueChanged(double value)
+    {
+        MainRTB.Zoom = value;
+    }
+
+    private void CheckBox_IsCheckedChanged(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is CheckBox cbox && cbox.IsChecked is bool b)
+            MainRTB.IsReadOnly = b;
+    }
+
+    private void StrikeCB_PointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.Length == 0) return;
+        if (sender is CheckBox cb && cb.IsChecked is bool b)
+        {
+            ApplyDecoration(!b, TextDecorationLocation.Strikethrough); // checkbox not yet changed on PointerReleased
+        }
+    }
+
+    private void UnderCB_PointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.Length == 0) return;
+
+        if (sender is CheckBox cb && cb.IsChecked is bool b)
+        {
+            ApplyDecoration(!b, TextDecorationLocation.Underline); // checkbox not yet changed on PointerReleased
+        }
+
+    }
+
+    private void OverCB_PointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.Length == 0) return;
+        if (sender is CheckBox cb && cb.IsChecked is bool b)
+        {
+            ApplyDecoration(!b, TextDecorationLocation.Overline); // checkbox not yet changed on PointerReleased
+        }
+
+    }
+
+    private void ApplyDecoration(bool on, TextDecorationLocation textDecLoc)
+    {
+        MainRTB.FlowDocument.Selection.ApplyFormatting(Inline.TextDecorationsProperty, textDecLoc);
+
+    }
+
+    private void CellAlignmentCB_DropDownClosed(object? sender, EventArgs e)
+    {
+        if (sender is ComboBox cb && cb.SelectedItem is ComboBoxItem cbi)
+        {
+            if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock)
+            {
+               thisPar.OwningCell?.CellVerticalAlignment = cbi.Content?.ToString() switch
+                {
+                    "Top" => Avalonia.Layout.VerticalAlignment.Top,
+                    "Center" => Avalonia.Layout.VerticalAlignment.Center,
+                    "Bottom" => Avalonia.Layout.VerticalAlignment.Bottom,
+                    _ => Avalonia.Layout.VerticalAlignment.Top
+                };
+            }
+        }
+    }
+
+    private void CellBackground_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (progChange) return;
+        SolidColorBrush hBrush = new(e.NewColor);
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock)
+        {
+            thisPar.OwningCell?.CellBackground = hBrush;
+        }
+    }
+    
+    private void TableBorder_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (progChange) return;
+        SolidColorBrush hBrush = new(e.NewColor);
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock)
+        {
+            thisPar.OwningCell?.GetOwningTable.BorderBrush = hBrush;
+        }
+    }
+
+    internal void TableBorderNS_UserValueChanged(double value)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            t.BorderThickness = new Thickness(value);
+        }
+            
+    }
+
+    private void InsertColsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            t.InsertColumnsAt(c.ColNo, (int)InsertNumberNS.Value);
+        }
+    }
+    
+    private void InsertRowsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            t.InsertRowsAt(c.RowNo, (int)InsertNumberNS.Value);
+        }
+
+
+    }
+
+    private void RemoveColsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            t.RemoveColumns(c.ColNo, (int)InsertNumberNS.Value);
+        }
+    }
+    
+    private void RemoveRowsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            t.RemoveRows(c.RowNo, (int)InsertNumberNS.Value);
+        }
+
+
+    }
+
+    private void TableJustificationComboBox_DropDownClosed(object? sender, System.EventArgs e)
+    {
+        if (sender is ComboBox cbox && cbox.SelectedItem is ComboBoxItem cbitem)
+        {
+            if (cbitem.Content is string selJust && MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+            {
+                t.TableAlignment = selJust switch
+                {
+                    "Left" => Avalonia.Layout.HorizontalAlignment.Left,
+                    "Center" => Avalonia.Layout.HorizontalAlignment.Center,
+                    "Right" => Avalonia.Layout.HorizontalAlignment.Right,
+                    _ => Avalonia.Layout.HorizontalAlignment.Left
+                };
+            }
+        }
+
+
+    }
+
+    private void MergeRightButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t) 
+        {
+            int row = c.RowNo;
+            int col = c.ColNo;
+            int count = Math.Max(1, (int)MergeCountNS.Value);
+            count = Math.Min(count, t.ColDefs.Count - 1 - col);
+            if (count > 0)
+                t.MergeCellsRightAt(row, col, count);
+        }
+    }
+
+    private void MergeDownButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            int row = c.RowNo;
+            int col = c.ColNo;
+            int count = Math.Max(1, (int)MergeCountNS.Value);
+            count = Math.Min(count, t.RowDefs.Count - 1 - row);
+            if (count > 0)
+                t.MergeCellsDownAt(row, col, count);
+
+        }
+    }
+
+    private void SplitColsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t) 
+        {
+            int row = c.RowNo;
+            int col = c.ColNo;
+            int count = Math.Max(1, (int)SplitCountNS.Value);
+            
+            if (count > 1)
+                t.SplitCellHorizontal(row, col, count);
+        }
+    }
+
+    private void SplitRowsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph thisPar && thisPar.IsCellBlock && thisPar.OwningCell is Cell c && c.GetOwningTable is Table t)
+        {
+            int row = c.RowNo;
+            int col = c.ColNo;
+            int count = Math.Max(1, (int)SplitCountNS.Value);
+
+            if (count > 1)
+                t.SplitCellVertical(row, col, count);
+
+        }
+    }
+
+    private void DoSomethingButton_Click(object? sender, RoutedEventArgs e)
+    {
+        //remove a row
+        if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph p)
+        {
+            if (p.IsCellBlock && p.OwningCell is Cell thisCell && thisCell.GetOwningTable is Table t)
+            {
+                t.RemoveRows(0, 1);
+            }
+        }
+
+        //change image
+        //if (MainRTB.FlowDocument.Selection.GetStartPar() is Paragraph p)
+        //{
+        //    //MainRTB.FlowDocument.InsertParagraphAt(68);
+
+        //    if (MainRTB.FlowDocument.GetBlocks.OfType<Paragraph>().FirstOrDefault(p => p.GetInlines.OfType<EditableInlineUIContainer>().Any()) is Paragraph PP)
+        //    {
+        //        if (PP.GetInlines.OfType<EditableInlineUIContainer>().FirstOrDefault() is EditableInlineUIContainer eiuc)
+        //        {
+        //            eiuc.SetChild(new Image() { Source = new Bitmap(AssetLoader.Open(new Uri("avares://DemoApp_AvRichTextBox/Assets/avalonia-logo2.ico"))), Width = 150, Height = 150 });
+        //        }
+        //    }
+
+        //}
+
+    }
+
+
+}

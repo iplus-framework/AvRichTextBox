@@ -1,16 +1,18 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- <TargetFramework>net10.0</TargetFramework> -->
     <TargetFramework>$(AvaloniaBuildFramework)</TargetFramework>
     <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <IncludeAvaloniaGenerators Condition="'$(UseAvaloniaFork)' == 'True'">true</IncludeAvaloniaGenerators>
     <!--<AvaloniaUseCompiledBindingsByDefault Condition="'$(UseAvaloniaFork)' == 'True'">false</AvaloniaUseCompiledBindingsByDefault>-->
   </PropertyGroup>
 
-	<!--<PropertyGroup Label="Avalonia">
+  <!--<PropertyGroup Label="Avalonia">
     <AvaloniaUseCompiledBindingsByDefault>True</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>-->
 
@@ -45,7 +47,6 @@
     </Content>
   </ItemGroup>
 
-
   <!-- Only include NuGet packages when NOT using Avalonia fork -->
   <ItemGroup Condition="'$(UseAvaloniaFork)' == 'False'">
     <PackageReference Include="Avalonia" />
@@ -53,6 +54,7 @@
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
     <PackageReference Include="Avalonia.Diagnostics">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>

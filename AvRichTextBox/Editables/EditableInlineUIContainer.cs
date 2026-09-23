@@ -5,48 +5,198 @@ namespace AvRichTextBox;
 
 public class EditableInlineUIContainer : InlineUIContainer, IEditable
 {
-   public EditableInlineUIContainer() { Id = ++FlowDocument.InlineIdCounter; }
+    public EditableInlineUIContainer() { Id = ++FlowDocument.InlineIdCounter; this.PropertyChanged += EditableInlineUIContainer_PropertyChanged;  }
 
-   public EditableInlineUIContainer(Control c) { Child = c; Id = ++FlowDocument.InlineIdCounter; }
+    [Obsolete("Use SetChild()/GetChild() instead.", true)]
+    public new Control? Child
+    {
+        get => base.Child;
+        set 
+        { 
+            _internalChildChange = true; 
+            base.Child = value ?? null!; 
+            _internalChildChange = false; 
+        }
+    }
 
-   public int Id { get; set; }
-   public int MyParagraphId { get; set; }
-   public FlowDocument MyFlowDoc { get; set; } = null!;
-   public int TextPositionOfInlineInParagraph { get; set; }
-   public string InlineText { get; set; } = "@";
-   public bool IsTableCellInline { get; set; } = false;
-   public object Tag { get; set; } = null!;
+    public void SetChild(Control? control)
+    {
+        _internalChildChange = true;
 
-   [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static")]
-   public string FontName => "---";
+        if (MyFlowDoc != null && !DisableUndoStack && IsAttachedToDocument)
+            MyFlowDoc.Undos.Add(new EditableUIContainerChildEditDo(this.MyParagraphId, this.Id, GetChild(), control, MyFlowDoc));
 
-   public int InlineLength => 1;
-   public bool IsEmpty => false;
-   public bool IsLastInlineOfParagraph { get; set; }
-   //public double InlineHeight => (this.Child != null && this.Child.GetType() == typeof(Image) ? : this.Child.Bounds.Height;
-   public double InlineHeight => Child == null ? 0 : this.Child.Bounds.Height;
-   
+        base.Child = control!;
 
-   public int ImageNo;
+        _internalChildChange = false;
 
-   public IEditable Clone() => new EditableInlineUIContainer(this.Child) { MyParagraphId = this.MyParagraphId, MyFlowDoc = this.MyFlowDoc, };
+        MyFlowDoc?.InvokeSelectionChanged(); // recalculate caret position if image size changes
 
-   public IEditable CloneWithId()
-   {  
-      IEditable IdClone = this.Clone();
-      IdClone.Id = this.Id;
-      return IdClone;
+    }
+
+    public Control? GetChild() => base.Child;
+
+    public Control? Content { get => GetChild(); set => SetChild(value);  }
+
+    private bool _internalChildChange = false;
+
+
+    private void EditableInlineUIContainer_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        //Debug.WriteLine($"ieditableUICont {e.Property.Name} set");
+
+        switch (e.Property)
+        {
+            case AvaloniaProperty tp when tp == InlineUIContainer.ChildProperty:
+
+                //Debug.WriteLine($"ieditableUICont {e.Property.Name} set");
+
+                if (!_internalChildChange)
+                    throw new InvalidOperationException("Use AddChild().");
+
+                break;
+
+            case AvaloniaProperty tp when tp == InlineUIContainer.FontWeightProperty:
+        
+                break;
+
+            case AvaloniaProperty tp when tp == InlineUIContainer.FontFamilyProperty:
+        
+                break;
             
-   }
+            case AvaloniaProperty tp when tp == InlineUIContainer.FontSizeProperty:
+        
+                break;
+            
+            case AvaloniaProperty tp when tp == InlineUIContainer.FontStretchProperty:
+        
+                break;
+            
+            case AvaloniaProperty tp when tp == InlineUIContainer.FontStyleProperty:
+        
+                break;
+            
+            case AvaloniaProperty tp when tp == InlineUIContainer.ForegroundProperty:
+        
+                break;
+            
+            case AvaloniaProperty tp when tp == InlineUIContainer.BackgroundProperty:
+        
+                break;
 
-   public bool IsSelected { get; set { field = value; this.Child.Opacity = value ? 0.2 : 1; } } = false;
+            case AvaloniaProperty tp when tp == InlineUIContainer.BaselineAlignmentProperty:
+        
+                break;
 
+            case AvaloniaProperty tp when tp == InlineUIContainer.TextDecorationsProperty:
+        
+                break;
+        }
+        
+    }
+
+    public EditableInlineUIContainer(Control c) : this() { SetChild(c); }
+
+    internal bool IsAttachedToDocument = false;
+    bool IEditable.IsAttachedToDocument { get => IsAttachedToDocument; set => IsAttachedToDocument = value; }
+
+    internal int Id { get; set; }
+    int IEditable.Id { get => Id; set => Id = value; }
+
+    internal int MyParagraphId { get; set; }
+    int IEditable.MyParagraphId { get => MyParagraphId; set => MyParagraphId = value; }
+
+    internal FlowDocument MyFlowDoc { get; set; } = null!;
+    FlowDocument IEditable.MyFlowDoc { get => MyFlowDoc; set => MyFlowDoc = value; }
+
+    public int TextPositionOfInlineInParagraph { get; set; }
+
+    internal string InlineText { get; private set; } = "@";
+    string IEditable.InlineText { get => InlineText; set { InlineText = value; } }
+
+    bool IEditable.IsFirstInlineOfParagraph { get; set; }
+    
+    internal bool IsLastInlineOfParagraph { get; set; }
+    bool IEditable.IsLastInlineOfParagraph { get => IsLastInlineOfParagraph; set => IsLastInlineOfParagraph = value; }
+
+    internal bool IsTableCellInline { get; set; }
+    bool IEditable.IsTableCellInline { get => IsTableCellInline; set => IsTableCellInline = value; }
+
+    internal IEditable? PreviousInline { get; set; }
+    IEditable? IEditable.PreviousInline { get => PreviousInline; set => PreviousInline = value; }
+    internal IEditable? NextInline { get; set; }
+    IEditable? IEditable.NextInline { get => NextInline; set => NextInline = value; }
+
+    public IEditable? GetPreviousInline => PreviousInline;
+    public IEditable? GetNextInline => NextInline;
+
+    public object Tag { get; set; } = null!;
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static")]
+    public string FontName => "---";
+
+    public int InlineLength => 1;
+    public bool IsEmpty => false;
+    
+    
+    public double InlineHeight => base.Child == null ? 0 : base.Child.Bounds.Height;
+
+    
+    internal int ImageNo;
+
+    public IEditable Clone()
+    {
+        bool keepDisableUndoStack = DisableUndoStack;
+        DisableUndoStack =  true;
+
+        EditableInlineUIContainer eIUC = new(base.Child)
+        {
+            MyParagraphId = this.MyParagraphId,
+            MyFlowDoc = this.MyFlowDoc,
+            IsLastInlineOfParagraph = this.IsLastInlineOfParagraph,
+            IsTableCellInline = this.IsTableCellInline,
+        };
+
+        // create new cloned Image if necessary
+        if (this.GetChild() is Image img)
+        {
+            Image newImg = new()
+            {
+                ClipToBounds = img.ClipToBounds,
+                HorizontalAlignment = img.HorizontalAlignment,
+                Focusable = img.Focusable,
+                Margin=img.Margin,
+                Tag = img.Tag,
+                Source = img.Source,
+                Width = img.Width,
+                Height = img.Height,
+            };
+            eIUC.SetChild(newImg);
+        }
+
+        DisableUndoStack = keepDisableUndoStack;
+
+        return eIUC;
+
+    }
+
+    public IEditable CloneWithId()
+    {
+        IEditable IdClone = this.Clone();
+        IdClone.Id = this.Id;
+        IdClone.TextPositionOfInlineInParagraph = this.TextPositionOfInlineInParagraph;  //necessary because clone is produced when calculating range inline positions
+        return IdClone;
+
+    }
+
+    internal bool IsSelected { get; set; } = false;
 
 #if DEBUG
-   // FOR DEBUGGER PANEL
-   public InlineVisualizationProperties InlineVP { get; set; } = new();
-   public string InlineToolTip => "";
-   public string DisplayInlineText { get => $"<UICONTAINER> => {(this.Child != null && this.Child.GetType() == typeof(Image) ? "Image" : "NoChild")}"; }
+    // FOR DEBUGGER PANEL
+    internal InlineVisualizationProperties InlineVP { get; set; } = new();
+    InlineVisualizationProperties IEditable.InlineVP { get => InlineVP; set => InlineVP = value; }
+    public string InlineToolTip => "";
+    public string DisplayInlineText { get => $"<UICONTAINER> => {(base.Child != null && base.Child.GetType() == typeof(Image) ? "Image" : "NoChild")}"; }
 #endif
 
 

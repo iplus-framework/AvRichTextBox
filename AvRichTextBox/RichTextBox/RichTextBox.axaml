@@ -3,12 +3,23 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:dataannotations="using:System.ComponentModel.DataAnnotations"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:system="using:System"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450" Background="WhiteSmoke"
+             xmlns:system="using:System" mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450" 
 			 xmlns:local="using:AvRichTextBox" 
 			 x:Class="AvRichTextBox.RichTextBox" 
-			 PointerReleased="RichTextBox_PointerReleased" PointerExited="RichTextBox_PointerExited" KeyDown="RichTextBox_KeyDown"  Focusable="True"
-			 BorderBrush="Black" BorderThickness="1" Padding="2" >
+			 PointerReleased="RichTextBox_PointerReleased" PointerExited="RichTextBox_PointerExited" KeyDown="RichTextBox_KeyDown" KeyUp="RichTextBox_KeyUp"  Focusable="True"
+			 BorderBrush="Black" BorderThickness="1" Background="White" Template="{StaticResource NoPaddingTemplate}" Padding="0" >
+
+	<!--Disable user settings for Horiz/VerticalContentAlignment, because that would break internal positioning -->
+	<UserControl.Resources>
+        <ControlTemplate x:Key="NoPaddingTemplate" TargetType="UserControl">
+            <ContentPresenter
+                Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+				BorderThickness="{TemplateBinding BorderThickness}"
+				Background="{TemplateBinding Background}" 
+				Padding="{TemplateBinding Padding}"/>
+        </ControlTemplate>
+    </UserControl.Resources>
 
 	<UserControl.Styles>
 
@@ -16,79 +27,93 @@
 		  <Setter Property="Template">
 			<ControlTemplate>
 			  <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
-				 <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}"/>
+				 <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
 			  </Border>
 			</ControlTemplate>
 		  </Setter>
 		</Style>
 
-		<Style Selector="local|EditableTable > ContentPresenter">
+		<Style Selector="local|EditableTable > ContentPresenter" x:DataType="local:Cell">
 			<Setter Property="Grid.Row" Value="{Binding RowNo}" />
 			<Setter Property="Grid.Column" Value="{Binding ColNo}" />
 			<Setter Property="Grid.ColumnSpan" Value="{Binding ColSpan}" />
 			<Setter Property="Grid.RowSpan" Value="{Binding RowSpan}" />
 		</Style>
 
-		 <Style Selector="local|EditableParagraph.paragraphBindings">
+		 <Style Selector="local|EditableParagraph.paragraphBindings" x:DataType="local:Paragraph">
 			<Setter Property="TextWrapping" Value="Wrap"/>
-			<Setter Property="Margin" Value="5"/>
-			 <!--LineHeight="{Binding LineHeight}"-->
-			<Setter Property="LineSpacing" Value="{Binding LineSpacing}"/>
+			<Setter Property="Margin" Value="{Binding Margin}"/>
+			<Setter Property="LineHeight" Value="{Binding LineHeight}"/>
+			<!--<Setter Property="LineSpacing" Value="{Binding LineSpacing}"/>-->
 			<Setter Property="FontFamily" Value="{Binding FontFamily}"/>
 			<Setter Property="FontWeight" Value="{Binding FontWeight}"/>
 			<Setter Property="FontSize" Value="{Binding FontSize}"/>
-			<Setter Property="Background" Value="{Binding Background}"/>
 			<Setter Property="TextAlignment" Value="{Binding TextAlignment}"/>
-			<Setter Property="SelectionBrush" Value="{Binding SelectionBrush}"/>
-			<Setter Property="VerticalAlignment" Value="{Binding VerticalAlignment}"/>
-
-			<Setter Property="SelectionStart" Value="{Binding SelectionStartInBlock, Mode=TwoWay}"/>
-			<Setter Property="SelectionEnd" Value="{Binding SelectionEndInBlock, Mode=TwoWay}"/>
+		
 		</Style>
 
 	</UserControl.Styles>
 
 
-	<DockPanel x:Name="MainDP" MinWidth="{Binding MinWidth}">  <!--this binds to viewmodel-->
+	<DockPanel x:Name="MainDP" x:DataType="local:RichTextBoxViewModel" MinWidth="{Binding MinWidth}">  <!--this binds to viewmodel-->
+	
 
+	<LayoutTransformControl >
+		<LayoutTransformControl.LayoutTransform>
+			<ScaleTransform x:DataType="local:RichTextBox" ScaleX="{Binding $parent[local:RichTextBox].Zoom, Mode=OneWay}" ScaleY="{Binding $parent[local:RichTextBox].Zoom, Mode=OneWay}" />
+		</LayoutTransformControl.LayoutTransform>
 
-		<ScrollViewer x:Name="FlowDocSV"  HorizontalScrollBarVisibility="Disabled" Margin="0" Padding="0" Offset="{Binding RTBScrollOffset, Mode=OneWay}"  ScrollChanged="ScrollViewer_ScrollChanged"
-					  PointerPressed="FlowDocSV_PointerPressed" PointerMoved="FlowDocSV_PointerMoved" PointerReleased="FlowDocSV_PointerReleased" >
+	
+		<ScrollViewer x:Name="FlowDocSV"  HorizontalScrollBarVisibility="Disabled" Margin="0" Padding="0" Offset="{Binding RTBScrollOffset, Mode=OneWay}" ScrollChanged="ScrollViewer_ScrollChanged" PointerPressed="FlowDocSV_PointerPressed" PointerMoved="FlowDocSV_PointerMoved" PointerReleased="FlowDocSV_PointerReleased"  >
+						
 
 			<Grid VerticalAlignment="Top">
 
 				<!-- The FlowDocument itself -->
 				<ItemsControl x:Name="DocIC" DataContext="{Binding FlowDoc}" VerticalAlignment="Top" ItemsSource="{Binding Blocks}" Margin="0" Padding="{Binding PagePadding}" >
 
+				<ItemsControl.ContextMenu>
+					<ContextMenu x:Name="DocContextMenu" Opening="DocContextMenu_Opening">
+						<MenuItem Header="Copy" Click="CopySelectionMenuItem_Click" IsEnabled="{Binding HasSelectedText}"/>
+						<MenuItem Header="Paste" Click="PasteSelectionMenuItem_Click" />
+						<MenuItem Header="Paste without formatting" Click="PasteSelectionAsPlainTextMenuItem_Click" />
+						<MenuItem Header="Cut" Click="CutSelectionMenuItem_Click" IsEnabled="{Binding HasSelectedText}"/>
+						<MenuItem Header="Delete" Click="DeleteSelectionMenuItem_Click" IsEnabled="{Binding HasSelectedText}"/>
+						<Separator/>
+						<MenuItem x:Name="InsertHyperlinkMenuItem" Header="Insert Hyperlink" Click="InsertHyperlinkMenuItem_Click"/>
+						<MenuItem x:Name="EditHyperlinkMenuItem"   Header="Edit Hyperlink"   Click="EditHyperlinkMenuItem_Click"   IsVisible="False"/>
+						<MenuItem x:Name="RemoveHyperlinkMenuItem" Header="Remove Hyperlink" Click="RemoveHyperlinkMenuItem_Click" IsVisible="False"/>
+					</ContextMenu>
+				</ItemsControl.ContextMenu>
+
 					<ItemsControl.ItemsPanel>
 						<ItemsPanelTemplate>
-							<StackPanel Orientation="Vertical" />
+							<StackPanel Orientation="Vertical" Margin="5, 5, 15, 15"  />  <!--Margin needed to prevent text off screen at right and bottom -->
 						</ItemsPanelTemplate>
 					</ItemsControl.ItemsPanel>
 
 					<ItemsControl.ItemTemplate>
 
-						<DataTemplate>
+						<DataTemplate >
 
-							<ContentControl Content="{Binding}" HorizontalAlignment="Stretch" >
+							<ContentControl Content="{Binding}" HorizontalAlignment="Stretch" ClipToBounds="False" >
 
 								<ContentControl.DataTemplates>
 								
 									<!-- Template for EditableParagraph -->
-									<DataTemplate DataType="local:Paragraph">
+									<DataTemplate DataType="local:Paragraph"  >
 									
 										<Border BorderThickness="{Binding BorderThickness}" BorderBrush="{Binding BorderBrush}" CornerRadius="3" Margin="{Binding Margin}"
-											  VerticalAlignment="Top" HorizontalAlignment="Stretch" Padding="0">
+											  VerticalAlignment="Top" HorizontalAlignment="Stretch" Padding="0" Background="{Binding Background}">
 
-											<local:EditableParagraph Classes="paragraphBindings" xml:space="preserve"	
+											<local:EditableParagraph Classes="paragraphBindings" xml:space="preserve" Background="Transparent" 
 													MouseMove="EditableParagraph_MouseMove" 
+													MouseLeave="EditableParagraph_MouseLeave" 
 													LostFocus="EditableParagraph_LostFocus" 
-													SelectionStartRect_Changed="SelectionStart_RectChanged"
-													SelectionEndRect_Changed="SelectionEnd_RectChanged"
 
 													TextLayoutInfoStartRequested="{Binding RequestTextLayoutInfoStart}"
 													TextLayoutInfoEndRequested="{Binding RequestTextLayoutInfoEnd}"
-													local:RequestExtensions.TextBoxFocusRequested="{Binding RequestTextBoxFocus}"
+													local:RequestExtensions.TextBlockFocusRequested="{Binding RequestTextBlockFocus}"
 													local:RequestExtensions.IsInlineUpdateRequested="{Binding RequestInlinesUpdate}"
 													local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}"
 													/>
@@ -99,39 +124,61 @@
 
 									<!-- Template for EditableTable -->
 									<DataTemplate DataType="local:Table" >
+										
+										
+										<local:EditableTable Background="GhostWhite" VerticalAlignment="Top"  BorderBrush="{Binding BorderBrush}" BorderThickness="{Binding BorderThickness}" Margin="{Binding Margin}" HorizontalAlignment="{Binding TableAlignment}" Width="{Binding Width}" Height="{Binding Height}" ItemsSource="{Binding Cells}" 
+										 MouseMove="EditableTable_MouseMove" MouseLeave="EditableTable_MouseLeave" ClipToBounds="False"
+										 local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}" SizeChanged="EditableTable_SizeChanged"
+										 >
 											
-										<local:EditableTable Background="GhostWhite"  BorderBrush="{Binding BorderBrush}" BorderThickness="{Binding BorderThickness}" Margin="{Binding Margin}" HorizontalAlignment="{Binding TableAlignment}" Width="{Binding Width}" Height="{Binding Height}" ItemsSource="{Binding Cells}" >
-
 												<ItemsControl.ItemsPanel>
 													<ItemsPanelTemplate>
-														<local:BindableGrid RowDefs="{Binding RowDefs}" ColDefs="{Binding ColDefs}" />
+															<local:BindableGrid RowDefs="{Binding RowDefs}" ColDefs="{Binding ColDefs}" ClipToBounds="False" />
 													</ItemsPanelTemplate>
 												</ItemsControl.ItemsPanel>
 
 												<ItemsControl.ItemTemplate>
 													<DataTemplate x:DataType="{x:Type local:Cell}">
 														<Grid>
-															<local:EditableCell Padding="{Binding Padding}"  BorderThickness="{Binding BorderThickness}" BorderBrush="{Binding BorderBrush}" Background="{Binding CellBackground}" >
+															<local:EditableCell Padding="{Binding Padding}" Background="{Binding CellBackground}"  MouseMove="EditableCell_MouseMove" MouseLeave="EditableCell_MouseLeave">
+
+																<!-- Cell interior paragraph stack -->
+																<ItemsControl ItemsSource="{Binding CellBlocks}" Margin="0" VerticalAlignment="{Binding CellVerticalAlignment}">
+																	<ItemsControl.ItemsPanel>
+																		<ItemsPanelTemplate>
+																			<StackPanel Orientation="Vertical" />  
+																		</ItemsPanelTemplate>
+																	</ItemsControl.ItemsPanel>
 															
-																<local:EditableParagraph x:DataType="local:Paragraph" Classes="paragraphBindings" DataContext="{Binding CellContent}" xml:space="preserve" 
-																	MouseMove="EditableParagraph_MouseMove" 
-																	LostFocus="EditableParagraph_LostFocus" 
-																	SelectionStartRect_Changed="SelectionStart_RectChanged"
-																	SelectionEndRect_Changed="SelectionEnd_RectChanged"
+																	<ItemsControl.ItemTemplate>
+
+																		<DataTemplate>
+
+																			<local:EditableParagraph x:DataType="local:Paragraph" Classes="paragraphBindings" xml:space="preserve" 
+																				MouseMove="EditableParagraph_MouseMove" LostFocus="EditableParagraph_LostFocus" MouseLeave="EditableParagraph_MouseLeave" 
 																
-																	TextLayoutInfoStartRequested="{Binding RequestTextLayoutInfoStart}"
-																	TextLayoutInfoEndRequested="{Binding RequestTextLayoutInfoEnd}"
-																	local:RequestExtensions.TextBoxFocusRequested="{Binding RequestTextBoxFocus}"
-																	local:RequestExtensions.IsInlineUpdateRequested="{Binding RequestInlinesUpdate}"
-																	local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}"
-																	/>  
+																				TextLayoutInfoStartRequested="{Binding RequestTextLayoutInfoStart}"
+																				TextLayoutInfoEndRequested="{Binding RequestTextLayoutInfoEnd}"
+																				local:RequestExtensions.TextBlockFocusRequested="{Binding RequestTextBlockFocus}"
+																				local:RequestExtensions.IsInlineUpdateRequested="{Binding RequestInlinesUpdate}"
+																				local:RequestExtensions.InvalidateVisualRequested="{Binding RequestInvalidateVisual}"
+																				local:RequestExtensions.SizeChangedRequested="{Binding RequestSizeChanged}"
+																				/>  
+																		</DataTemplate>
+																	</ItemsControl.ItemTemplate>
+																</ItemsControl>
+
 															</local:EditableCell>
-															<Rectangle Fill="{Binding SelectionBrush}" Opacity="0.45" IsVisible="{Binding Selected}"/>
+
+															<Rectangle Fill="{Binding SelectionBrush}" Opacity="0.45" IsVisible="{Binding Selected}" IsHitTestVisible="False"/>
 														</Grid>
 													</DataTemplate>
 												</ItemsControl.ItemTemplate>
+																					
+
 										</local:EditableTable>
-										
+										 
+											
 									</DataTemplate>
 
 								</ContentControl.DataTemplates>
@@ -142,13 +189,48 @@
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
 
-				<TextBlock x:Name="PreeditOverlay" Padding="4, 0, 4, 2" Height="24" FontSize="15" HorizontalAlignment="Left" VerticalAlignment="Top" Foreground="Black" Background="#DDDDDD" IsHitTestVisible="False" IsVisible="False"/>
-							
-				
-			</Grid>
+			<TextBlock x:Name="PreeditOverlay" Padding="4, 0, 4, 2" Height="24" FontSize="15" HorizontalAlignment="Left" VerticalAlignment="Top" Foreground="Black" Background="#DDDDDD" IsHitTestVisible="False" IsVisible="False"/>
+
+			<!-- Hyperlink insert/edit popup -->
+			<Popup x:Name="HyperlinkPopup" Placement="Pointer" PlacementTarget="{Binding #DocIC}" IsLightDismissEnabled="True">
+				<Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+						BorderThickness="1" CornerRadius="4" Padding="10" BoxShadow="0 2 8 0 #40000000">
+					<StackPanel Orientation="Vertical" Spacing="8" Width="320" KeyDown="HyperlinkPopup_KeyDown">
+
+						<TextBlock x:Name="HyperlinkPopupTitle" Text="Insert Hyperlink" FontSize="13"/>
+
+						<!-- Text field -->
+						<StackPanel Orientation="Vertical" Spacing="3">
+							<TextBlock Text="Text" FontSize="12"/>
+							<TextBox x:Name="HyperlinkTextBox" PlaceholderText="Display text" FontSize="13" KeyDown="HyperlinkPopup_KeyDown"/>
+						</StackPanel>
+
+						<!-- URL field -->
+						<StackPanel Orientation="Vertical" Spacing="3">
+							<TextBlock Text="URL" FontSize="12"/>
+							<TextBox x:Name="HyperlinkUrlBox" PlaceholderText="https://" FontSize="13" KeyDown="HyperlinkPopup_KeyDown"/>
+						</StackPanel>
+
+						<!-- Buttons -->
+						<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+							<Button x:Name="HyperlinkDeleteButton" Content="Remove Link" Click="HyperlinkDeleteButton_Click" IsVisible="False"/>
+							<Button x:Name="HyperlinkCancelButton" Content="Cancel" Click="HyperlinkCancelButton_Click"/>
+							<Button x:Name="HyperlinkOkButton" Content="OK" Click="HyperlinkOkButton_Click"/>
+						</StackPanel>
+
+					</StackPanel>
+				</Border>
+			</Popup>
+						
+		</Grid>
+
 		</ScrollViewer>
+
+		</LayoutTransformControl>
 
 	</DockPanel>
 
 
+
 </UserControl>
+ 

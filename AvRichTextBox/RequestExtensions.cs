@@ -5,56 +5,76 @@ using System.Diagnostics;
 
 namespace AvRichTextBox;
 
-public static class RequestExtensions
-{  
+internal static class RequestExtensions
+{
 
-   public static readonly AttachedProperty<bool> TextBoxFocusRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("TextBoxFocusRequested", typeof(RequestExtensions));
-   public static void SetTextBoxFocusRequested(AvaloniaObject element, bool value) => element.SetValue(TextBoxFocusRequestedProperty, value);
-   public static bool GetTextBoxFocusRequested(AvaloniaObject element) => (bool)element.GetValue(TextBoxFocusRequestedProperty);
+    internal static readonly AttachedProperty<bool> TextBlockFocusRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("TextBlockFocusRequested", typeof(RequestExtensions));
+    public static void SetTextBlockFocusRequested(AvaloniaObject element, bool value) => element.SetValue(TextBlockFocusRequestedProperty, value);
+    public static bool GetTextBlockFocusRequested(AvaloniaObject element) => (bool)element.GetValue(TextBlockFocusRequestedProperty);
 
-   public static readonly AttachedProperty<bool> IsInlineUpdateRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("IsInlineUpdateRequested", typeof(RequestExtensions));
-   public static void SetIsInlineUpdateRequested(AvaloniaObject element, bool value) => element.SetValue(IsInlineUpdateRequestedProperty, value);
-   public static bool GetIsInlineUpdateRequested(AvaloniaObject element) => (bool)element.GetValue(IsInlineUpdateRequestedProperty);
+    internal static readonly AttachedProperty<bool> IsInlineUpdateRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("IsInlineUpdateRequested", typeof(RequestExtensions));
+    public static void SetIsInlineUpdateRequested(AvaloniaObject element, bool value) => element.SetValue(IsInlineUpdateRequestedProperty, value);
+    public static bool GetIsInlineUpdateRequested(AvaloniaObject element) => (bool)element.GetValue(IsInlineUpdateRequestedProperty);
 
-   public static readonly AttachedProperty<bool> InvalidateVisualRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("InvalidateVisualRequested", typeof(RequestExtensions));
-   public static void SetInvalidateVisualRequested(AvaloniaObject element, bool value) => element.SetValue(InvalidateVisualRequestedProperty, value);
-   public static bool GetInvalidateVisualRequested(AvaloniaObject element) => (bool)element.GetValue(InvalidateVisualRequestedProperty);
+    internal static readonly AttachedProperty<bool> InvalidateVisualRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("InvalidateVisualRequested", typeof(RequestExtensions));
+    public static void SetInvalidateVisualRequested(AvaloniaObject element, bool value) => element.SetValue(InvalidateVisualRequestedProperty, value);
+    public static bool GetInvalidateVisualRequested(AvaloniaObject element) => (bool)element.GetValue(InvalidateVisualRequestedProperty);
 
-   static RequestExtensions()
-   {
-      TextBoxFocusRequestedProperty.Changed.Subscribe(args =>
-      {
-         if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
-         {
-            edPar.Focus();
-            edPar.SetValue(TextBoxFocusRequestedProperty, false);
-         }
-      });
+    internal static readonly AttachedProperty<bool> SizeChangedRequestedProperty = AvaloniaProperty.RegisterAttached<EditableParagraph, bool>("SizeChangedRequested", typeof(RequestExtensions));
+    public static void SetSizeChangedRequested(AvaloniaObject element, bool value) => element.SetValue(SizeChangedRequestedProperty, value);
+    public static bool GetSizeChangedRequested(AvaloniaObject element) => (bool)element.GetValue(SizeChangedRequestedProperty);
 
-      IsInlineUpdateRequestedProperty.Changed.Subscribe(args =>
-      {
-         if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
-         {
-            edPar.UpdateInlines();
-            edPar.SetValue(IsInlineUpdateRequestedProperty, false);
-         }
-      });
+    static RequestExtensions()
+    {
+        TextBlockFocusRequestedProperty.Changed.Subscribe(args =>
+        {
+            if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
+            {
+                edPar.Focus();
+                edPar.SetValue(TextBlockFocusRequestedProperty, false);
+            }
+        });
 
-      InvalidateVisualRequestedProperty.Changed.Subscribe(args =>
-      {
-         if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
-         {
-            edPar.UpdateLayout();
-            edPar.InvalidateVisual();
-            edPar.SetValue(InvalidateVisualRequestedProperty, false);
-         }
-      });
+        IsInlineUpdateRequestedProperty.Changed.Subscribe(args =>
+        {
+            if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
+            {
+                edPar.UpdateInlines();
+                edPar.SetValue(IsInlineUpdateRequestedProperty, false);
+            }
+        });
+
+        InvalidateVisualRequestedProperty.Changed.Subscribe(args =>
+        {
+            if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
+            {
+                edPar.UpdateLayout();
+                edPar.InvalidateVisual();
+                edPar.SetValue(InvalidateVisualRequestedProperty, false);
+            }
+            else if (args.Sender is EditableTable edTable && (bool)args.NewValue.Value)
+            {
+                edTable.UpdateLayout();
+                edTable.UpdateBordersCanvas();
+                edTable.InvalidateVisual();
+                edTable.SetValue(InvalidateVisualRequestedProperty, false);
+            }
+        });
+
+        SizeChangedRequestedProperty.Changed.Subscribe(args =>
+        {
+            if (args.Sender is EditableParagraph edPar && (bool)args.NewValue.Value)
+            {
+                edPar.RecalculateFullRowHeight();
+                edPar.SetValue(SizeChangedRequestedProperty, false);
+            }
+        });
 
 
-           
 
 
-   }
+
+    }
 }
 
 

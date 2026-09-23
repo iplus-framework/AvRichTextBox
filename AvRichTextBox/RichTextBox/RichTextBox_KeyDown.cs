@@ -1,184 +1,153 @@
 using Avalonia.Input;
-using System.Diagnostics;
-
 
 namespace AvRichTextBox;
 
 public partial class RichTextBox
-{  
+{
+    private readonly record struct KeyCombo(
+       Key Key,
+       bool Ctrl = false,
+       bool Shift = false,
+       bool Alt = false
+    );
 
-   private void RichTextBox_KeyDown(object? sender, KeyEventArgs e)
+    private Dictionary<KeyCombo, Action>? _keyActions;
+
+    private Dictionary<KeyCombo, Action> KeyActions => _keyActions ??= new()
    {
+      // Ctrl shortcuts
 
-      if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
-      {
-         e.Handled = true;
+      // Allow user enable/disable  ///////////////////
+      { new(Key.B, Ctrl: true), () => { if(DisableEditingShortcuts) return; ToggleBold(); } },
+      { new(Key.I, Ctrl: true), () => { if(DisableEditingShortcuts) return; ToggleItalics(); } },
+      { new(Key.U, Ctrl: true), () => { if(DisableEditingShortcuts) return; ToggleUnderlining(); } },
+      { new(Key.C, Ctrl: true), () => { if (DisableEditingShortcuts) return; CopyToClipboard(); } },
+      { new(Key.X, Ctrl: true), () => { if (DisableEditingShortcuts) return; CutToClipboard(); } },
+      { new(Key.V, Ctrl: true), () => { if(DisableEditingShortcuts) return; PasteFromClipboard(); } },
+      { new(Key.V, Ctrl: true, Shift: true), () => PasteFromClipboard(plainTextOnly: true) },
+      { new(Key.Z, Ctrl: true), () => { if (IsReadOnly || DisableEditingShortcuts) return; FlowDoc.Undo(); } },
+      { new(Key.Y, Ctrl: true), () => { if (IsReadOnly || DisableEditingShortcuts) return; FlowDoc.Redo(); } },
+      { new(Key.A, Ctrl: true), () => { if (DisableEditingShortcuts) return; FlowDoc.SelectAll() ; } },
+      { new(Key.K, Ctrl: true), () => { if (DisableEditingShortcuts) return; OpenHyperlinkPopup(); } },
+      { new(Key.Delete, Ctrl: true), () => { if (IsReadOnly || DisableEditingShortcuts) return; FlowDoc.DeleteWord(false); } },
+      { new(Key.Back, Ctrl: true), () => { if (IsReadOnly || DisableEditingShortcuts) return; FlowDoc.DeleteWord(true); } },
+      ///////////////////////////////////////////////////
 
-         switch (e.Key)
+      
+      { new(Key.Enter), () => { InsertParagraph(); } },
+
+      { new(Key.Enter, Shift: true), () =>
          {
-            case Key.I:
-               ToggleItalics();
-               break;
-
-            case Key.B:
-               ToggleBold();
-               break;
-
-            case Key.U:
-               ToggleUnderlining();
-               break;
-
-            case Key.C:
-               CopyToClipboard();
-               break;
-
-            case Key.V:
-               PasteFromClipboard();
-               break;
-
-            case Key.Home: // Ctrl-Home 
-               FlowDoc.MoveToDocStart();
-               FlowDocSV.ScrollToHome();
-               break;
-
-            case Key.End: // Ctrl-End 
-               FlowDoc.MoveToDocEnd();
-               break;
-
-            case Key.Z:
-               if (IsReadOnly) return;
-               FlowDoc.Undo();
-               break;
-
-            case Key.A:
-               FlowDoc.SelectAll();
-               break;
-
-            case Key.Delete:
-               if (IsReadOnly) return;
-               FlowDoc.DeleteWord(false);
-               break;
-
-            case Key.Back:
-               FlowDoc.DeleteWord(true);
-               break;
-
-            case Key.Right:
-               FlowDoc.MoveRightWord();
-               break;
-
-            case Key.Left:
-               FlowDoc.MoveLeftWord();
-               break;
+            if (LineBreakOnShiftEnter)
+               InsertLineBreak();
+            else
+               InsertParagraph();
          }
-      }
-      else
-      {
+      },
 
-         switch (e.Key)
+        { new(Key.Tab), () =>
          {
-            case Key.Escape:
-               if (PreeditOverlay.IsVisible)
-                  HideIMEOverlay();
-               break;
-
-            case Key.Tab:
-               e.Handled = true;
-               if (FlowDoc.Selection.GetStartPar() is Paragraph p && p.IsTableCellBlock)
-               {
-                  if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                  {
-                     if (FlowDoc.GetPreviousParagraph(p) is Paragraph prevPar)
-                        FlowDoc.Select(prevPar.StartInDoc, 0);
-                  }
-                  else
-                  {
-                     if (FlowDoc.GetNextParagraph(p) is Paragraph nextPar)
-                        FlowDoc.Select(nextPar.StartInDoc, 0);
-                  }
-               }
-               else
-                  InsertTab();
-               break;
-
-            case Key.Enter:
-               if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-               {
-                  if (LineBreakOnShiftEnter)
-                     InsertLineBreak();
-                  else
-                     InsertParagraph();
-               }
-               else
-                  InsertParagraph();
-               break;
-            case Key.Home:
-               FlowDoc.MoveToStartOfLine(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-               break;
-
-            case Key.End:
-               FlowDoc.MoveToEndOfLine(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-               break;
-
-            case Key.Right:
-               if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                  FlowDoc.ExtendSelectionRight();
-               else
-                  FlowDoc.MoveSelectionRight(false);
-               FlowDoc.ResetInsertFormatting();
-               break;
-
-            case Key.Left:
-               if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                  FlowDoc.ExtendSelectionLeft();
-               else
-                  FlowDoc.MoveSelectionLeft(false);
-               FlowDoc.ResetInsertFormatting();
-               break;
-
-            case Key.Up:
-               if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                  FlowDoc.ExtendSelectionUp();
-               else
-                  FlowDoc.MoveSelectionUp(false);
-               break;
-
-            case Key.Down:
-               if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                  FlowDoc.ExtendSelectionDown();
-               else
-                  FlowDoc.MoveSelectionDown(true);
-               break;
-
-            case Key.Back:
-               PerformDelete(true);
-               break;
-
-            case Key.Delete:
-               PerformDelete(false);
-               break;
-
-            case Key.PageDown:
-               MovePage(1, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-               break;
-
-            case Key.PageUp:
-               MovePage(-1, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-               break;
-
+            if (FlowDoc.Selection.GetStartPar() is Paragraph p && p.IsTableCellBlock && p.OwningCell is Cell thisCell)
+                FlowDoc.MoveToNextCell(thisCell);
+            else
+               InsertTab();
          }
+      },
 
-         RtbVm.CaretVisible = (RtbVm.FlowDoc.Selection.Length == 0);
-         if (client != null)
+      { new(Key.Tab, Shift: true), () =>
+         {
+            if (FlowDoc.Selection.GetStartPar() is Paragraph p && p.IsTableCellBlock && p.OwningCell is Cell thisCell)
+                FlowDoc.MoveToPreviousCell(thisCell);
+            else
+               InsertTab();
+         }
+      },
+
+      // NAVIGATION KEYS  ///////////////////////////////
+      // Ctrl navigation
+      { new(Key.Home, Ctrl: true), () => { FlowDoc.MoveToDocStart(); FlowDocSV.ScrollToHome(); } },
+      { new(Key.Home, Ctrl: true, Shift: true), () => { FlowDoc.ExtendSelectionToDocStart(); } },
+      { new(Key.End, Ctrl: true), () => { FlowDoc.MoveToDocEnd(); } },
+      { new(Key.End, Ctrl: true, Shift: true), () => { FlowDoc.ExtendSelectionToDocEnd(); } },
+      { new(Key.Right, Ctrl: true), () => { FlowDoc.MoveRightWord(); } },
+      { new(Key.Right, Ctrl: true, Shift: true), () => { FlowDoc.ExtendSelectionRightWord(); } },
+      { new(Key.Left, Ctrl: true), () => { FlowDoc.MoveLeftWord(); } },
+      { new(Key.Left, Ctrl: true, Shift: true), () => { FlowDoc.ExtendSelectionLeftWord(); } },
+
+      // Normal keys
+      { new(Key.Escape), () =>
+         {
+            if (HyperlinkPopupOpen)
+               CloseHyperlinkPopup();
+            else if (PreeditOverlay.IsVisible)
+               HideIMEOverlay();
+         }
+      },
+                
+      { new(Key.Home), () => { FlowDoc.MoveToStartOfLine(false); } },
+      { new(Key.Home, Shift: true), () => { FlowDoc.MoveToStartOfLine(true); } },
+      { new(Key.End), () => { FlowDoc.MoveToEndOfLine(false); } },
+      { new(Key.End, Shift: true), () => { FlowDoc.MoveToEndOfLine(true); } },
+      { new(Key.Right), () => { FlowDoc.MoveSelectionRight(); FlowDoc.ResetInsertFormatting(); } }, 
+      { new(Key.Right, Shift: true), () => { FlowDoc.ExtendSelectionRight(); FlowDoc.ResetInsertFormatting(); } },
+      { new(Key.Left), () => { FlowDoc.MoveSelectionLeft(); FlowDoc.ResetInsertFormatting(); } },
+      { new(Key.Left, Shift: true), () => { FlowDoc.ExtendSelectionLeft(); FlowDoc.ResetInsertFormatting(); } },
+      { new(Key.Up), () => { FlowDoc.MoveSelectionUp(true); } },
+      { new(Key.Up, Shift: true), () => { FlowDoc.ExtendSelectionUp(); } },
+      { new(Key.Down), () => { FlowDoc.MoveSelectionDown(true); } },
+      { new(Key.Down, Shift: true), () => { FlowDoc.ExtendSelectionDown(); } },
+      { new(Key.Back), () => { PerformDelete(true); } },
+      { new(Key.Delete), () => { PerformDelete(false); } },
+      { new(Key.PageDown), () => { MovePage(1, false); } },
+      { new(Key.PageDown, Shift: true), () => { MovePage(1, true); } },
+      { new(Key.PageUp), () => { MovePage(-1, false); } },
+      { new(Key.PageUp, Shift: true), () => { MovePage(-1, true); } },
+   };
+
+    private static KeyCombo GetCombo(KeyEventArgs e) =>
+       new(
+          e.Key,
+          Ctrl: e.KeyModifiers.HasFlag(KeyModifiers.Control),
+          Shift: e.KeyModifiers.HasFlag(KeyModifiers.Shift),
+          Alt: e.KeyModifiers.HasFlag(KeyModifiers.Alt)
+       );
+
+    private bool TryHandleKeyAction(KeyEventArgs e)
+    {
+        if (KeyActions.TryGetValue(GetCombo(e), out var action))
+        {
+            action();
+            e.Handled = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void RichTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        TryHandleKeyAction(e);
+
+
+        if (_CaretRect.Classes.Remove("blinking"))
+            _CaretRect.Opacity = 1.0;
+
+        //if (_CaretRect.Classes.Contains("blinking"))
+        //{
+        //    _CaretRect.Classes.Remove("blinking");
+        //    _CaretRect.Opacity = 1.0;
+        //}
+
+        RtbVm.CaretVisible = (RtbVm.FlowDoc.Selection.Length == 0);
+
+        if (client != null)
             UpdatePreeditOverlay();
+    }
 
-      }
+    private void RichTextBox_KeyUp(object? sender, KeyEventArgs e)
+    {
 
+        _CaretRect.Classes.Add("blinking");
 
-   }
-
-
-
+    }
 }
-
-

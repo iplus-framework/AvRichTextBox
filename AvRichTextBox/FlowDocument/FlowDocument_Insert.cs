@@ -1,191 +1,478 @@
-﻿using DynamicData;
+﻿using Avalonia.Threading;
+using DynamicData;
+using RtfDomParser;
+using System.Text;
+using System.Xml;
 
 namespace AvRichTextBox;
 
 public partial class FlowDocument
 {
-   internal void InsertText(string? insertText)
-   {
-      if (Selection.GetStartInline() is not IEditable startInline || startInline.GetType() == typeof(EditableInlineUIContainer)) return;
+    internal int InsertRTF(byte[] rtfbytes, Paragraph startPar, TextRange insertRange, int insertParIndex, List<int> addedBlockIds)
+    {  // delete + insert = single undo operation
 
-      if (insertText != null)
-      {
-         if (Selection.Length > 0)
-         {
-            DeleteRange(Selection, true);
+        (int leftId, int rightId) edgeIds = DeleteRange(insertRange, false, false, true);
+        int insertIdx = GetInsertIndexAfterDelete(startPar, edgeIds.leftId, insertRange);
+
+        List<IEditable> rightSplitRuns = startPar.Inlines.ToList()[insertIdx..];
+
+        List<Block> rtfBlocksToInsert = GetRtfContent(rtfbytes);
+
+        
+        // pasted cloned cells are no longer flagged as clones
+        rtfBlocksToInsert.OfType<Table>().ToList().ForEach(table => table.Cells.ToList().ForEach(c => c.IsClonedCell = false));
+
+        if (rtfBlocksToInsert.LastOrDefault() is Block lastBlock && lastBlock.Text == "\r")
+            rtfBlocksToInsert.Remove(lastBlock);
+        int pastedTextLength = ProcessInsertBlocks(rtfBlocksToInsert, startPar, insertIdx, insertParIndex, addedBlockIds, rightSplitRuns);
+
+        UpdateTextLayouts(rtfBlocksToInsert);
+
+        return pastedTextLength;
+
+    }
+
+    internal static void UpdateTextLayouts(IEnumerable<Block> blocksToUpdate)
+    {
+        foreach (Block b in blocksToUpdate)
+        {
+            switch (b) 
+            {
+                case Paragraph p:
+                    p.CallRequestTextLayoutInfoStart();
+                    p.CallRequestTextLayoutInfoEnd();
+                    break;
+                
+                case Table t:
+                    foreach (Cell c in t.Cells)
+                        UpdateTextLayouts(c.CellBlocks);
+                    break;
+            }
+        }
+    }
+
+    private static int GetInsertIndexAfterDelete(Paragraph startPar, int leftId, TextRange insertRange)
+    {
+        if (insertRange.Start == startPar.StartInDoc)
+            return 0;
+
+        IEditable? leftInline = startPar.Inlines.FirstOrDefault(il => il.Id == leftId);
+        if (leftInline != null)
+            return startPar.Inlines.IndexOf(leftInline) + 1;
+
+        // The inline referenced by leftId was fully deleted.
+        // Calculate insert index from the character position instead.
+        int posInPar = insertRange.Start - startPar.StartInDoc;
+        IEditable? precedingInline = startPar.Inlines.LastOrDefault(il => il.TextPositionOfInlineInParagraph + il.InlineLength <= posInPar);
+        return precedingInline != null ? startPar.Inlines.IndexOf(precedingInline) + 1 : 0;
+    }
+
+
+    private List<Block> GetRtfContent(byte[] rtfbytes)
+    {
+        List<Block> rtfBlockList = [];
+
+        string rtfstring = Encoding.ASCII.GetString(rtfbytes);
+        RTFDomDocument rtfdoc = new();
+        rtfdoc.LoadRTFText(rtfstring);
+
+        //Debug.WriteLine("RTF: " + rtfstring);
+
+        //int domParCount = rtfdoc.Elements.OfType<RTFDomParagraph>().Count();
+        RTFDomElement lastElm = null!;
+
+        foreach (RTFDomElement rtfelm in rtfdoc.Elements)
+        {
+            switch (rtfelm)
+            {
+                case RTFDomParagraph rtfpar:
+                    Paragraph rtfPar = RtfConversions.GetParagraphFromRtfDom(rtfpar, this);
+                    rtfBlockList.Add(rtfPar);
+                    break;
+
+                case RTFDomTable rtftable:
+                    Table rtfTable = RtfConversions.GetTableFromRtfDom(rtftable, this, rtfdoc.ColorTable);
+                    
+                    if (lastElm is RTFDomParagraph lastRtfPar && rtfBlockList.LastOrDefault() is Paragraph lastPar && lastPar.IsEmptyInlinePar)
+                        rtfBlockList.Remove(lastPar);  // Table doesn't need to be in a new paragraph 
+
+                    rtfBlockList.Add(rtfTable);
+                    break;
+
+                default:
+                    Debug.WriteLine("unknown rtfdoc element: " + rtfelm.GetType());
+                    break;
+            }
+            lastElm = rtfelm;
+        }
+
+        return rtfBlockList;
+    }
+
+
+    internal int InsertXaml(byte[] xamlbytes, Paragraph startPar, Paragraph endPar, TextRange insertRange, int insertParIndex, List<int> addedBlockIds)
+    {
+        (int leftId, int rightId) edgeIds = DeleteRange(insertRange, false, false, true);
+        
+        int insertIdx = GetInsertIndexAfterDelete(startPar, edgeIds.leftId, insertRange);
+
+        List<IEditable> rightSplitRuns = endPar.Inlines.ToList()[insertIdx..];
+
+        string xamlString = Encoding.ASCII.GetString(xamlbytes);
+
+        List<Block> xamlBlocks = [];
+
+        XmlDocument xamlDocument = new();
+
+        xamlDocument.LoadXml(xamlString);
+
+        if (xamlDocument.ChildNodes.Count == 1)
+        {
+            XmlNode? SectionNode = xamlDocument.ChildNodes[0];
+            if (SectionNode!.Name == "Section")
+            {
+                foreach (XmlNode blockNode in SectionNode.ChildNodes.OfType<XmlNode>())
+                {
+                    switch (blockNode.Name)
+                    {
+                        case "Paragraph":
+
+                            xamlBlocks.Add(XamlConversions.GetParagraph(blockNode, this));
+                            break;
+
+                        case "Table":
+
+                            xamlBlocks.Add(XamlConversions.GetTable(blockNode, this));
+                            break;
+                    }
+                }
+            }
+        }
+
+        return ProcessInsertBlocks(xamlBlocks, startPar, insertIdx, insertParIndex, addedBlockIds, rightSplitRuns);
+
+    }
+
+    internal void InsertText(string? insertText)
+    {
+
+        if (Selection.StartInline is not IEditable startInline || startInline is EditableInlineUIContainer) return;
+        
+
+        if (startInline is EditableHyperlink && Selection.GetIsStartAtStartOfStartInline)
+        {   // Caret is at the start of a hyperlink.
+            // If there is a non-hyperlink inline immediately before it, append text there instead.
+            // If the hyperlink is the first inline in the paragraph, insert a new plain run before it so the user can type text preceding the hyperlink.
+            int hyperlinkIdx = Selection.StartParagraph.Inlines.IndexOf(startInline);
+            if (hyperlinkIdx > 0 && Selection.StartParagraph.Inlines[hyperlinkIdx - 1] is EditableRun precedingRun)
+            {
+                startInline = precedingRun;
+            }
+            else if (hyperlinkIdx == 0)
+            {
+                var newRun = new EditableRun("");
+                Selection.StartParagraph.Inlines.Insert(0, newRun);
+                UpdateBlockAndInlineStarts(Selection.StartParagraph);
+                Selection.UpdateContextStart();
+                startInline = newRun;
+                Redos.Clear();
+            }
+            else
+                return;
+        }
+   
+        if (insertText != null)
+        {
+            int origSelLen = Selection.Length;
+            bool doNextUndo = false;
+            if (Selection.Length > 0)
+            {
+                doNextUndo = true;
+                DeleteRange(Selection, true, false, true);
+                Selection.CollapseToStart();
+                SelectionExtendMode = ExtendMode.ExtendModeNone;
+            }
+
+            DisableUndoStack = true;
+
+            int insertIdx = 0;
+            int originalStart = Selection.Start;
+            
+            if (InsertRunMode)
+            {
+                if (startInline.CloneWithId() is not EditableRun startInlineRunClone) return;
+               
+                int runIdx = Selection.StartParagraph.Inlines.IndexOf(startInline);
+
+                (List<IEditable> createdInlines, (int idLeft, int idRight) edgeIds) createdInlinesResult = GetTextRangeInlines(Selection, addToDoc: true);
+                List<IEditable> applyInlines = createdInlinesResult.createdInlines;
+                (int idLeft, int idRight) edgeIds = createdInlinesResult.edgeIds;
+
+
+                if (applyInlines.Count == 0)
+                {
+                    applyInlines.Add(new EditableRun(""));
+                    Selection.StartParagraph.Inlines.Insert(runIdx, applyInlines[0]);
+                }
+
+                if (applyInlines.Count > 0 && applyInlines[0] is EditableRun erun)
+                    startInline = erun;
+
+                int addedId = applyInlines[0].Id;
+
+                Undos.Add(new InsertNewFormattedTextUndo(Selection.StartParagraph.Id, startInlineRunClone, edgeIds, addedId, runIdx, this, originalStart));
+
+                startInline.InlineText = insertText;
+
+                toggleFormatRun?.Invoke(startInline);
+                
+                InsertRunMode = false;
+
+            }
+            else
+            {
+                try
+                {
+                    insertIdx = GetCharPosInInline(startInline, Selection.Start);
+                    if (insertIdx > -1 && insertIdx <= startInline.InlineLength)
+                    {
+                        startInline.InlineText = startInline.InlineText.Insert(insertIdx, insertText);
+
+                        //Undos.Add(new InsertCharUndo(Selection.StartParagraph.Id, startInline.Id, insertText, insertIdx, this, originalStart, origSelLen, doNextUndo));
+                        Undos.Add(new InsertCharUndo(Selection.StartParagraph.Id, startInline.Id, insertText, insertIdx, this, originalStart, doNextUndo));
+                    }
+                }
+                catch (Exception ex) { Debug.WriteLine($"insert Error: startInlinetext = {startInline.InlineText}, idx = {insertIdx}\n{ex.Message}***"); }
+
+                //Debug.WriteLine("biasforward start = " + Selection.BiasForwardStart + ", end = " + Selection.BiasForwardEnd.ToString());
+            }
+
+            DisableUndoStack = false;
+            
+            Redos.Clear();
+
+            Selection.StartParagraph.CallRequestInlinesUpdate();
+
+            UpdateBlockAndInlineStarts(Selection.StartParagraph);
+            //UpdateTextRanges(Selection.Start, -origSelLen + insertText.Length);
+            UpdateTextRanges(Selection.Start, insertText.Length);
+
+            for (int i = 0; i < insertText.Length; i++)
+                MoveSelectionRight();
+
+        }
+
+    }
+
+    internal void InsertLineBreak()
+    {
+        Paragraph startPar = Selection.StartParagraph;
+
+        if (startPar.Inlines.Count == 1 && startPar.Inlines[0] is EditableInlineUIContainer euic)
+            return; // Don't mess container edges
+
+        if (Selection.StartInline is not IEditable startInline)
+            return;
+
+        int runIdx = startPar.Inlines.IndexOf(startInline);
+        IEditable originalInlineClone = startInline.CloneWithId();
+
+        int origSelLen = Selection.Start;
+        bool doNextUndo = false;
+        if (Selection.Length > 0)
+        {
+            doNextUndo = true;
+            DeleteRange(Selection, true, false, true);
             Selection.CollapseToStart();
             SelectionExtendMode = ExtendMode.ExtendModeNone;
-            startInline = Selection.GetStartInline() ?? startInline;
-         }
+        }
 
-         int insertIdx = 0;
-         if (InsertRunMode)
-         {
-            (int idLeft, int idRight) edgeIds;
-            List<IEditable> applyInlines = GetRangeInlinesAndAddToDoc(Selection, out edgeIds);
-            if (applyInlines.Count == 0)
+        DisableUndoStack = true;
+
+        List<IEditable> eruns = SplitRunAtPos(Selection.Start, startInline, GetCharPosInInline(startInline, Selection.Start)); // creates an empty inline
+
+        //Debug.WriteLine("split runs\n" + string.Join("\n", eruns.OfType<EditableRun>().ToList().ConvertAll(er => er.Text)));
+
+        var newELB = new EditableLineBreak();
+        int insertIdx = runIdx + 1;
+        startPar.Inlines.Insert(insertIdx, newELB);
+
+        List<int> addedRunIds = eruns.ConvertAll(erun => erun.Id);
+
+        if (insertIdx == startPar.Inlines.Count - 1 || startPar.Inlines[insertIdx + 1].IsLineBreak)
+        {
+            EditableRun newErun = new("");
+            startPar.Inlines.Insert(insertIdx + 1, newErun);
+            addedRunIds.Add(newErun.Id);
+        }
+
+        //Undos.Add(new InsertLineBreakUndo(Selection.StartParagraph.Id, newELB.Id, addedRunIds, runIdx, originalInlineClone, this, Selection.Start, origSelLen, doNextUndo));
+        Undos.Add(new InsertLineBreakUndo(Selection.StartParagraph.Id, newELB.Id, addedRunIds, runIdx, originalInlineClone, this, Selection.Start, doNextUndo));
+
+        SelectionExtendMode = ExtendMode.ExtendModeNone;
+
+        startPar.UpdateEditableRunPositions();
+        startPar.CallRequestInlinesUpdate();
+        startPar.CallRequestTextLayoutInfoStart();
+        startPar.CallRequestTextLayoutInfoEnd();
+
+        UpdateBlockAndInlineStarts(startPar);
+        UpdateTextRanges(Selection.Start, 2);
+
+        DisableUndoStack = false;
+
+        Select(Selection.Start + 2, 0);
+        Selection.BiasForwardStart = true;
+        Selection.BiasForwardEnd = true;
+
+        Redos.Clear();
+
+        ScrollInDirection?.Invoke(1);
+
+
+    }
+
+    public void InsertParagraphAt(int insertCharIndex)
+    {
+        InsertParagraph(true, insertCharIndex);
+    }
+
+    internal void InsertParagraph(bool addUndo, int insertCharIndex)
+    {      
+        if (insertCharIndex > this.DocEndPoint)
+            return;
+
+        if (GetContainingParagraph(insertCharIndex) is not Paragraph insertPar) return;
+
+        if (insertPar.Inlines.Count == 1 && insertPar.Inlines[0] is EditableInlineUIContainer euic)
+            return; // Don't mess with container edges
+
+        List<IEditable> keepParInlineClones = [.. insertPar.Inlines.Select(il => il.CloneWithId())];
+
+        int originalSelStart = insertCharIndex;
+
+        int selectionLength = 0;
+        bool doNextUndo = false;
+
+        if (addUndo)
+        {
+            if (Selection.Length > 0)
             {
-               applyInlines.Add(new EditableRun(""));
-               Selection.StartParagraph.Inlines.Insert(0, applyInlines[0]);
+                selectionLength = Selection.Length;
+                doNextUndo = true;
+                DeleteRange(Selection, true, false, true);
+                Selection.CollapseToStart();
+                SelectionExtendMode = ExtendMode.ExtendModeNone;
             }
-            startInline = applyInlines[0];
-            startInline.InlineText = insertText;
-            toggleFormatRun!(startInline);
-            InsertRunMode = false;
-         }
-         else
-         {
-            try
+        }
+
+
+        DisableUndoStack = true;
+
+        Paragraph parToInsert = null!;
+        int blockIndex = insertPar.IsCellBlock ? Blocks.IndexOf(insertPar.OwningTable!): Blocks.IndexOf(insertPar);
+        int parIndex = insertPar.IsCellBlock ? insertPar.OwningCell!.CellBlocks.IndexOf(insertPar) : blockIndex;
+
+        if (Selection.End == insertPar.EndInDoc)
+        {   // only need to add insert a new paragraph at the index
+            parToInsert = new Paragraph();
+
+            if (insertPar.IsCellBlock)
+                insertPar.OwningCell?.CellBlocks.Insert(parIndex + 1, parToInsert);
+            else
+                Blocks.Insert(parIndex + 1, parToInsert);
+
+            if (addUndo)
             {
-               insertIdx = GetCharPosInInline(startInline, Selection.Start);
-               startInline.InlineText = startInline.InlineText.Insert(insertIdx, insertText); // undo handled by PropertyChanged: Text
+                int tableId = insertPar.IsCellBlock ? insertPar.OwningTable!.Id : -1;
+                int cellId = insertPar.IsCellBlock ? insertPar.OwningCell!.Id : -1;
+                Undos.Add(new AddParagraphUndo(this, parToInsert.Id, originalSelStart, insertPar.IsCellBlock, tableId, cellId, -1, doNextUndo));
             }
-            catch{ Debug.WriteLine("insert Error: starinlinetext = " + startInline.InlineText + ", idx = " + insertIdx);}
-         }
+                
+        }
+        else
+        {   // current paragraph needs to be split into two
+            if (GetStartInline(insertCharIndex) is not IEditable startInline) return;
+            int StartRunIdx = insertPar.Inlines.IndexOf(startInline);
+            //Split at selection
+            List<IEditable> parSplitRuns = SplitRunAtPos(insertCharIndex, startInline, GetCharPosInInline(startInline, insertCharIndex));
 
-         UpdateTextRanges(Selection.Start, insertText.Length);
+            List<IEditable> RunList1 = [.. insertPar.Inlines.Take(new Range(0, StartRunIdx)).ToList().ConvertAll(r => r)];
+            if (parSplitRuns[0].InlineText != "" || RunList1.Count == 0)
+                RunList1.Add(parSplitRuns[0]);
+            List<IEditable> RunList2 = [.. insertPar.Inlines.Take(new Range(StartRunIdx + 1, insertPar.Inlines.Count)).ToList().ConvertAll(r => r as IEditable)];
 
-         Selection.StartParagraph.CallRequestInlinesUpdate();
-         UpdateBlockAndInlineStarts(Selection.StartParagraph);
+            Paragraph originalPar = insertPar;
 
-         for (int i = 0; i < insertText.Length; i++) 
-            MoveSelectionRight(true);
-         
-
-      }
-
-   }
-
-   internal void InsertLineBreak()
-   {
-      Paragraph startPar = Selection.StartParagraph;
-
-      if (startPar.Inlines.Count == 1 && startPar.Inlines[0] is EditableInlineUIContainer euic)
-         return; // Don't mess container edges
-
-      if (Selection.GetStartInline() is not IEditable startInline) 
-         return; 
-
-      int runIdx = startPar.Inlines.IndexOf(startInline);
-      IEditable originalInlineClone = startInline.CloneWithId();
-
-      List<IEditable> eruns = SplitRunAtPos(Selection.Start, startInline, GetCharPosInInline(startInline, Selection.Start)); // creates an empty inline
-
-      //Debug.WriteLine("split runs\n" + string.Join("\n", eruns.OfType<EditableRun>().ToList().ConvertAll(er => er.Text)));
-
-      var newELB = new EditableLineBreak();
-      startPar.Inlines.Insert(runIdx + 1, newELB);
-
-      Undos.Add(new InsertLineBreakUndo(Selection.StartParagraph.Id, newELB.Id, (eruns[0].Id, eruns[1].Id), runIdx, originalInlineClone, this, Selection.Start));
-      UpdateTextRanges(Selection.Start, 1);
-
-      SelectionExtendMode = ExtendMode.ExtendModeNone;
-
-      startPar.UpdateEditableRunPositions();
-      startPar.CallRequestInlinesUpdate();
-      startPar.CallRequestTextLayoutInfoStart();
-      startPar.CallRequestTextLayoutInfoEnd();
-
-      Select(Selection.Start + 2, 0);
-      Selection.BiasForwardStart = true;
-      Selection.BiasForwardEnd = true;
-
-      ScrollInDirection?.Invoke(1);
+            originalPar.Inlines.Clear();
+            originalPar.Inlines.AddRange(RunList1);
 
 
-   }
+            // Ending line break must be followed by empty run
+            if (originalPar.Inlines.LastOrDefault() is EditableLineBreak)
+                originalPar.Inlines.Insert(originalPar.Inlines.Count, new EditableRun(""));
 
-   internal void InsertParagraph(bool addUndo, int insertCharIndex)
-   {  //The delete range and InsertParagraph should constitute one Undo operation
+            parToInsert = originalPar.PropertyClone();
+            parToInsert.Inlines.AddRange(RunList2);
 
-      disableRunTextUndo = true;
-
-      if (GetContainingParagraph(insertCharIndex) is not Paragraph insertPar) return;
-
-      if (insertPar.IsTableCellBlock) return;
-      
-      if (insertPar.Inlines.Count == 1 && insertPar.Inlines[0] is EditableInlineUIContainer euic)
-         return; // Don't mess with container edges
-
-      List<IEditable> keepParInlineClones = [.. insertPar.Inlines.Select(il=>il.CloneWithId())]; 
-
-      int originalSelStart = insertCharIndex;
-      int parIndex = Blocks.IndexOf(insertPar);
-      int selectionLength = 0;
-
-      if (addUndo)
-      {
-         selectionLength = Selection.Length;
-         if (Selection.Length > 0)
-         {
-            DeleteRange(Selection, false);
-            Selection.CollapseToStart();
-            SelectionExtendMode = ExtendMode.ExtendModeNone;
-         }
-      }
-
-      if (GetStartInline(insertCharIndex) is not IEditable startInline) return;
-
-      int StartRunIdx = insertPar.Inlines.IndexOf(startInline);
-
-      //Split at selection
-      List<IEditable> parSplitRuns = SplitRunAtPos(insertCharIndex, startInline, GetCharPosInInline(startInline, insertCharIndex));
+            //Insert paragraph in appropriate block
+            if (insertPar.IsCellBlock)
+                insertPar.OwningCell?.CellBlocks.Insert(parIndex + 1, parToInsert);
+            else
+                Blocks.Insert(parIndex + 1, parToInsert);
 
 
-      List<IEditable> RunList1 = [.. insertPar.Inlines.Take(new Range(0, StartRunIdx)).ToList().ConvertAll(r => r)];
-      if (parSplitRuns[0].InlineText != "" || RunList1.Count == 0)
-         RunList1.Add(parSplitRuns[0]);
-      List<IEditable> RunList2 = [.. insertPar.Inlines.Take(new Range(StartRunIdx + 1, insertPar.Inlines.Count)).ToList().ConvertAll(r => r as IEditable)];
-      
-      Paragraph originalPar = insertPar;
-      
-      originalPar.Inlines.Clear();
-      originalPar.Inlines.AddRange(RunList1);
-      originalPar.SelectionStartInBlock = 0;
-      originalPar.CollapseToStart();
+            // Empty paragraph must contain an empty run
+            if (parToInsert.Inlines.Count == 0)
+            {
+                EditableRun erun = (EditableRun)originalPar.Inlines.Last().Clone();
+                erun.Text = "";
+                parToInsert.Inlines.Add(erun);
+            }
 
-      if (originalPar.Inlines.Last() is EditableLineBreak elb)
-      {
-         originalPar.Inlines.Insert(originalPar.Inlines.Count, new EditableRun(""));
-      }
+            // Line break at paragraph start must be preceded by an empty run
+            if (parToInsert.Inlines.FirstOrDefault() is EditableLineBreak)
+                parToInsert.Inlines.Insert(0, new EditableRun(""));
 
-      Paragraph parToInsert = originalPar.PropertyClone();
-
-      parToInsert.Inlines.AddRange(RunList2);
-      Blocks.Insert(parIndex + 1, parToInsert);
-
-      if (parToInsert.Inlines.Count == 0)
-      {
-         EditableRun erun = (EditableRun)originalPar.Inlines.Last().Clone();
-         erun.Text = "";
-         parToInsert.Inlines.Add(erun);
-      }
-      
-      UpdateTextRanges(insertCharIndex, 1);
-
-      UpdateBlockAndInlineStarts(parIndex);
-      originalPar.CallRequestInlinesUpdate();
-      parToInsert.CallRequestInlinesUpdate();
+            if (addUndo)
+            {
+                int tableId = insertPar.IsCellBlock ? insertPar.OwningTable!.Id : -1;
+                int cellId = insertPar.IsCellBlock ? insertPar.OwningCell!.Id : -1;
+                Undos.Add(new InsertParagraphUndo(this, originalPar.Id, parToInsert.Id, keepParInlineClones, originalSelStart, -1, insertPar.IsCellBlock, tableId, cellId, doNextUndo));
+            }
+                        
+            originalPar.CallRequestInlinesUpdate();
+            originalPar.CallRequestTextLayoutInfoStart();
+            originalPar.CallRequestTextLayoutInfoEnd();
+        }
 
 
-      if (addUndo)
-         Undos.Add(new InsertParagraphUndo(this, originalPar.Id, parToInsert.Id, keepParInlineClones, originalSelStart, selectionLength - 1));
+        if (parToInsert.GetPreviousParagraph is Paragraph prevPar)
+            parToInsert.TextAlignment = prevPar.TextAlignment;
 
-      Selection.BiasForwardStart = true;
-      Selection.BiasForwardEnd = true;
-      Selection.End += 1;
-      Selection.CollapseToEnd();
+        UpdateTextRanges(insertCharIndex, 1);
+        UpdateBlockAndInlineStarts(blockIndex);
 
-      originalPar.CallRequestTextLayoutInfoStart();
-      parToInsert.CallRequestTextLayoutInfoStart();
-      originalPar.CallRequestTextLayoutInfoEnd();
-      parToInsert.CallRequestTextLayoutInfoEnd();
+        parToInsert.CallRequestInlinesUpdate();
+        parToInsert.CallRequestTextLayoutInfoStart();
+        parToInsert.CallRequestTextLayoutInfoEnd();
 
-      ScrollInDirection?.Invoke(1);
+        DisableUndoStack = false;
 
-      disableRunTextUndo = false;
+        Redos.Clear();
 
-   }
+        Selection.BiasForwardStart = true;
+        Selection.BiasForwardEnd = true;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            Selection.End += 1;
+            Selection.CollapseToEnd();
+            ScrollInDirection?.Invoke(1);
+        });
+
+
+    }
 
 
 }

@@ -2,29 +2,38 @@
 namespace AvRichTextBox;
 
 public interface IEditable
-{   
+{
    internal int MyParagraphId { get; set; }
    internal FlowDocument MyFlowDoc { get; set; }
    internal int Id { get; set; }
    internal bool IsLastInlineOfParagraph { get; set; }
+   internal bool IsFirstInlineOfParagraph { get; set; }
    internal int TextPositionOfInlineInParagraph { get; set; }
-   internal bool IsTableCellInline { get; set; } 
 
-   public string InlineText { get; set; }
-   public bool IsEmpty { get; }
-   public int InlineLength { get; }
-   public double InlineHeight { get; }
-   public IEditable Clone();
-   public IEditable CloneWithId();
-   public bool IsRun => this.GetType() == typeof(EditableRun);
-   public bool IsUIContainer => this.GetType() == typeof(EditableInlineUIContainer);
-   public bool IsLineBreak => this.GetType() == typeof(EditableLineBreak);
-   
+   internal bool IsEmpty { get; }
+   internal bool IsTableCellInline { get; set; }  // set when editable is created
+   internal bool IsRun => this is EditableRun;
+   internal bool IsUIContainer => this is EditableInlineUIContainer;
+   internal bool IsLineBreak => this is EditableLineBreak;
+   internal bool IsHyperlink => this is EditableHyperlink;
+
+   internal string InlineText { get; set; }
+   internal int InlineLength { get; }
+   internal double InlineHeight { get; }
+
+   internal IEditable Clone();
+   internal IEditable CloneWithId();
+
+   internal IEditable? PreviousInline { get; set; }
+   internal IEditable? NextInline { get; set;}
+
+   internal bool IsAttachedToDocument { get; set; }
 
 #if DEBUG
    // FOR DEBUGGER PANEL
-   public InlineVisualizationProperties InlineVP { get; set; }
-   public string DisplayInlineText { get; }
+   internal string InlineToolTip { get; }
+   internal InlineVisualizationProperties InlineVP { get; set; }
+   internal string DisplayInlineText { get; }
 #endif
 
 }

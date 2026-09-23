@@ -1,295 +1,453 @@
-﻿using DynamicData;
+﻿using Avalonia.Threading;
+using DocumentFormat.OpenXml.Office2010.CustomUI;
+using DynamicData;
 
 namespace AvRichTextBox;
 
 public partial class FlowDocument
 {
-   internal void DeleteChar(bool backspace)
-   {
-      int originalSelectionStart = Selection.Start;
-      
-      //keep in cell
-      if (Selection.StartParagraph.IsTableCellBlock)
-      {
-         bool keepInCell = (backspace && Selection.StartParagraph.SelectionStartInBlock == 0) || (!backspace && Selection.StartParagraph.SelectionStartInBlock >= Selection.StartParagraph.BlockLength - 1);
-         if (keepInCell) return;
-      }
+    internal void DeleteChar(bool backspace)
+    {
+        int originalSelectionStart = Selection.Start;
 
-      if (backspace)
-         MoveSelectionLeft(true);
+        Paragraph startP = Selection.StartParagraph;
 
-      Selection.BiasForwardStart = true;
-      Selection.BiasForwardEnd = true;
+        //keep in cell
+        if (startP.IsTableCellBlock)
+        {
+            bool keepInCell =
+               (backspace && startP == startP.OwningCell?.CellBlocks.FirstOrDefault() && startP.SelectionEndInBlock == 0) ||
+               (!backspace && startP == startP.OwningCell?.CellBlocks.LastOrDefault() && startP.SelectionStartInBlock >= startP.BlockLength - 1);
+            if (keepInCell) return;
+        }
 
-      if (Selection.GetStartInline() is not IEditable startInline) return;
+        IEditable nextInline = Selection.StartInline?.NextInline!;
 
-      Paragraph startP = Selection.StartParagraph;
+        if (backspace)
+        {
+            // don't delete previous table par
+            if (!startP.IsTableCellBlock && Selection.Start == startP.StartInDoc && startP.GetPreviousParagraph is Paragraph prevPar && prevPar.IsTableCellBlock)
+                return;
 
-      if (startP.SelectionStartInBlock == startP.TextLength)
-         MergeParagraphForward(Selection.Start, true, originalSelectionStart);
-      else
-      {  //Delete one unit
-         int startInlineIdx = startP.Inlines.IndexOf(startInline);
-         int selectionStartInInline = 0;
+            MoveSelectionLeft();
 
-         if (startInline is EditableInlineUIContainer eIUC)
-         {
-            bool emptyRunAdded = false;
-            if (startP.Inlines.Count == 1)
+            if (Selection.Start > 0 && Selection.Start != Selection.StartParagraph.StartInDoc && nextInline is not EditableLineBreak)
             {
-               startP.Inlines.Add(new EditableRun(""));
-               emptyRunAdded = true;
+                Selection.BiasForwardStart = false;
+                Selection.BiasForwardEnd = false;
             }
-               
-            Undos.Add(new DeleteImageUndo(startP.Id, eIUC, startInlineIdx, this, originalSelectionStart, emptyRunAdded));
+        }
+        else
+        {
+            // don't delete next table par
+            if (Selection.Start == startP.EndInDoc && startP.GetNextParagraph is Paragraph nextPar && nextPar.IsTableCellBlock)
+                return;
 
-            startP.Inlines.Remove(eIUC);
-         }
-         else
-         {
-            bool isSelectionAtInlineEnd = GetCharPosInInline(startInline, Selection.End) == startInline.InlineLength;
+            //Change bias to be forward for delete
+            Selection.BiasForwardStart = true;
+            Selection.BiasForwardEnd = true;
+        }
 
-            if (GetNextInline(startInline) is EditableLineBreak lbreak && isSelectionAtInlineEnd)
-            {  //Delete linebreak
-               IEditable? lbnext = GetNextInline(lbreak);
-               startP.Inlines.Remove(lbreak);
-               if (lbnext != null && lbnext.IsEmpty)
-                  startP.Inlines.Remove(lbnext);
-               else if (startInline.IsEmpty)
-                  startP.Inlines.Remove(startInline);
+        startP = Selection.StartParagraph;
 
-               Undos.Add(new DeleteLineBreakUndo(startP.Id, lbreak.Id, this, originalSelectionStart));
+        if (GetStartInline(Selection.Start) is not IEditable startInline) return;
 
-            }
-            else
-            {  // delete normal run char
-               if (startInline.InlineLength == 1 && GetNextInline(startInline) is not EditableLineBreak elb)  // keep empty run on linebreak
-               {
-                  if (startInline.CloneWithId() is EditableRun removedRunClone)
-                  {
-                     startP.Inlines.Remove(startInline);
-                     Undos.Add(new DeleteRunUndo(startP.Id, removedRunClone, startInlineIdx, this, originalSelectionStart));
-                  }
-               }
-               else
-               {
-                  selectionStartInInline = GetCharPosInInline(startInline, Selection.Start);
-                  if (selectionStartInInline < startInline.InlineLength)
-                     startInline.InlineText = startInline.InlineText.Remove(selectionStartInInline, 1);   // undo handled by PropertyChanged: Text
-               }
-               
-               //Paragraph must always have at least an empty run
-               if (startP.Inlines.Count == 0)
-                  startP.Inlines.Add(new EditableRun(""));
-            }
-         }
+        if (!Selection.BiasForwardStart && nextInline is EditableLineBreak)
+        {
+            if (startInline.NextInline is IEditable LBNextInline)
+                startInline = LBNextInline;
+        }
 
-         UpdateTextRanges(Selection.Start, -1);
-
-         UpdateBlockAndInlineStarts(AllParagraphs.ToList().IndexOf(startP));
-      }
-
-      SelectionStart_Changed(Selection, Selection.Start);
-      Selection.StartParagraph.CallRequestInlinesUpdate();
-      Selection.StartParagraph.CallRequestTextLayoutInfoStart();
-
-
-
-   }
-
-   internal void DeleteSelection()
-   {
-      DeleteRange(Selection, true);
-      SelectionExtendMode = FlowDocument.ExtendMode.ExtendModeNone;
-      UpdateBlockAndInlineStarts(Selection.StartParagraph);
-      Selection.CollapseToStart();
-      Selection.BiasForwardStart = false;  
-      Selection.BiasForwardEnd = false;  
-
-   }
-
-   internal void DeleteRange(TextRange trange, bool addUndo)
-   {
-      disableRunTextUndo = true;
-
-      int originalSelectionStart = Selection.Start;
-      int originalTRangeLength = trange.Length;
-
-      List<Paragraph> rangePars = GetOverlappingParagraphsInRange(trange);
-      List<Table> tablesFullyInRange = GetFullTablesInRange(trange);
-      List<Paragraph> paragraphsFullyInRange = GetFullParagraphsInRange(trange);
-
-      if (addUndo) 
-         Undos.Add(new DeleteRangeUndo(rangePars.ConvertAll(rpar=> rpar.FullClone()), rangePars[0].Id, this, originalSelectionStart, originalTRangeLength));
-
-      (int idLeft, int idRight) edgeIds;
-      List<IEditable> rangeInlines = GetRangeInlinesAndAddToDoc(trange, out edgeIds);
-
-      //Delete the created inlines
-      foreach (IEditable toDeleteRun in rangeInlines)
-      {  
-         if (AllParagraphs.FirstOrDefault(p=> p.Id == toDeleteRun.MyParagraphId) is Paragraph rangePar)
-         {
-            rangePar.Inlines.Remove(toDeleteRun);
-            rangePar.CallRequestInlinesUpdate();
-         }
-      }
-
-      //Delete any full blocks contained within the range
-      foreach (Paragraph fullyContainedPar in paragraphsFullyInRange)
-      {
-         fullyContainedPar.Inlines.Clear();
-         fullyContainedPar.Inlines.Add(new EditableRun(""));  //empty run placeholder for paragraph
-
-         if (!fullyContainedPar.IsTableCellBlock)
-            Blocks.Remove(fullyContainedPar);
-      }
-      
-      Blocks.RemoveMany(tablesFullyInRange);
-
-      //Add a blank run if all runs were deleted in one paragraph
-      if (rangePars.Count == 1 && rangePars[0] is Paragraph p3 && p3.Inlines.Count == 0)
-         p3.Inlines.Add(new EditableRun(""));
-
-      //Merge inlines of last paragraph with first
-      if (rangePars.Count > 1)
-      {
-         Paragraph firstPar = rangePars[0];
-         Paragraph lastPar = rangePars[^1];
-         
-         if (!(firstPar.IsTableCellBlock || lastPar.IsTableCellBlock))
-         {
-            List<IEditable> moveInlines = [.. lastPar.Inlines];
-            lastPar.Inlines.RemoveMany(moveInlines);
-            lastPar.CallRequestInlinesUpdate();
-            firstPar.Inlines.AddRange(moveInlines);
-            firstPar.CallRequestInlinesUpdate(); // ensure any image containers are updated
-            Blocks.Remove(lastPar);
-         }
-      }
-
-      //Special case where all content was deleted leaving one empty block
-      if (Blocks.Count == 1 && Blocks[0] is Paragraph onlyPar && onlyPar.Inlines.Count == 0)
-         onlyPar.Inlines.Add(new EditableRun(""));
-
-
-      UpdateTextRanges(originalSelectionStart, -originalTRangeLength);
-
-      UpdateSelection();
-
-      trange.CollapseToStart();
-      SelectionExtendMode = ExtendMode.ExtendModeNone;
-
-      disableRunTextUndo = false;
-
-   }
-
-   internal void MergeParagraphForward(int mergeCharIndex, bool addUndo, int originalSelectionStart)
-   {
-      if (GetContainingParagraph(mergeCharIndex) is not Paragraph thisPar) return;
-      
-      int thisParIndex = Blocks.IndexOf(thisPar);
-      if (thisParIndex == Blocks.Count - 1) return; //is last Paragraph, can't merge forward
-      int origMergedParInlinesCount = thisPar.Inlines.Count;
-
-      if (Blocks[thisParIndex + 1] is not Paragraph nextPar) return;
-      
-      bool IsNextParagraphEmpty = nextPar.Inlines.Count == 1 && nextPar.Inlines[0].IsEmpty;
-      bool IsThisParagraphEmpty = thisPar.Inlines.Count == 1 && thisPar.Inlines[0].IsEmpty;
-
-      if (IsThisParagraphEmpty)
-      {
-         thisPar.Inlines.Clear();
-         origMergedParInlinesCount = 0;
-      }
-
-      if (addUndo)
-         Undos.Add(new MergeParagraphUndo(origMergedParInlinesCount, thisPar.Id, nextPar.FullClone(), this, originalSelectionStart)); // cloned with Id and inlines
-
-      //bool runAdded = false;
-      if (IsNextParagraphEmpty)
-      {
-         if (IsThisParagraphEmpty)
-         {
-            thisPar.Inlines.Add(new EditableRun(""));
-            //runAdded = true;
-         }
-      }
-      else
-      {
-         List<IEditable> inlinesToMove = [.. nextPar.Inlines];
-         nextPar.Inlines.Clear();
-         nextPar.CallRequestInlinesUpdate(); // ensure image containers are updated
-         thisPar.Inlines.AddRange(inlinesToMove);
-      }
-           
-      Blocks.Remove(nextPar);
-
-      Selection.BiasForwardStart = true;
-      Selection.BiasForwardEnd = true;
-
-      UpdateTextRanges(mergeCharIndex, -1);
-
-      thisPar.CallRequestInlinesUpdate();
-      UpdateBlockAndInlineStarts(thisParIndex);
-
-      thisPar.CallRequestTextBoxFocus();
-
-      UpdateSelectedParagraphs();
-
-
-   }
-   
-   internal void DeleteWord(bool backspace)
-   {
-      if (backspace)
-         if (Selection.Start <= 0) return;
-      else
-         if (Selection.Start >= Selection.StartParagraph.StartInDoc + Selection.StartParagraph.BlockLength)
+        if (startInline is EditableHyperlink hyperlink && hyperlink.InlineLength < 2)
+        {
+            if (backspace)
+                MoveSelectionRight();
             return;
+        }
 
-      
-      int originalSelectionStart = Selection.Start;
-      
-      if (backspace)
-         MoveLeftWord();
-      
-      Selection.BiasForwardStart = true;
-      Selection.BiasForwardEnd = true;
+        int offset = 0;
 
-      Paragraph startP = Selection.StartParagraph;
+        if (startP.SelectionStartInBlock == startP.BlockLength - 1)
+            MergeParagraphForward(Selection.Start, true, originalSelectionStart);
+        else
+        {  //Delete one unit
 
-      if (startP.SelectionStartInBlock == startP.TextLength)
-         MergeParagraphForward(Selection.Start, true, originalSelectionStart); //updates text ranges and adds undo
-      else
-      {
-         int NextWordEndPoint = -1;
-         if (Selection.GetStartInline() is IEditable startInline && (startInline.IsUIContainer || startInline.IsLineBreak))
-            NextWordEndPoint = Selection.Start + 1;
-         else
-         {
-            int IndexNextSpace = Selection.StartParagraph.Text.IndexOf(' ', Selection.Start - Selection.StartParagraph.StartInDoc);
-            if (IndexNextSpace == -1)
-               IndexNextSpace = Selection.StartParagraph.TextLength;
+            DisableUndoStack = true;
+
+            int startInlineIdx = startP.Inlines.IndexOf(startInline);
+            //int selectionStartInInline = 0;
+
+            if (startInline is EditableInlineUIContainer eIUC)
+            {
+                bool emptyRunAdded = false;
+                if (startP.Inlines.Count == 1)
+                {
+                    startP.Inlines.Add(new EditableRun(""));
+                    emptyRunAdded = true;
+                }
+
+                offset = 1;
+                Undos.Add(new DeleteImageUndo(startP.Id, eIUC, startInlineIdx, this, originalSelectionStart, emptyRunAdded));
+
+                startP.Inlines.Remove(eIUC);
+            }
             else
-               IndexNextSpace += 1;
-            NextWordEndPoint = Selection.StartParagraph.StartInDoc + IndexNextSpace;
-         }
+            {
+                int selectionStartInInline = GetCharPosInInline(startInline, Selection.End);
 
-         //if (startP.Inlines.Count > 1)
-         //   startP.RemoveEmptyInlines();
-         
-         TextRange deleteTextRange = new (this, Selection.Start, NextWordEndPoint);
-         DeleteRange(deleteTextRange, true);  // updates all text ranges and adds undo
-                           
-         UpdateBlockAndInlineStarts(AllParagraphs.IndexOf(startP));
-      }
+                //Debug.WriteLine("posininline = " + posInInline);
 
-      SelectionStart_Changed(Selection, Selection.Start);
-      Selection.StartParagraph.CallRequestInlinesUpdate();
-      Selection.StartParagraph.CallRequestTextLayoutInfoStart();
+                bool isSelectionAtInlineEnd = selectionStartInInline == startInline.InlineLength;
+                //bool isSelectionAtInlineEnd = GetCharPosInInline(startInline, Selection.End) == startInline.InlineLength;
+                int idxStartInlineInPar = startP.Inlines.IndexOf(startInline);
 
-   }
+                //if (startInline.NextInline is EditableLineBreak lbreak && isSelectionAtInlineEnd)
+                if (startInline is EditableLineBreak lbreak)
+                {  //Delete linebreak
+                    ((Type t1, int id1), (Type t2, int id2)) types = new(new(typeof(EditableLineBreak), lbreak.Id), new());
+                    int lbIndex = startP.Inlines.IndexOf(lbreak);
+                    IEditable? lbnext = lbreak.NextInline;
+                    
+                    bool removeNext = lbnext != null && lbnext.IsEmpty;
+                    bool startLineEmpty = startInline.IsEmpty;
+
+                    if (lbnext != null && lbnext.IsEmpty)
+                    {
+                        startP.Inlines.Remove(lbnext);
+                        types = new(new(typeof(EditableLineBreak), lbreak.Id), new(typeof(EditableRun), lbnext.Id));
+                    }
+                    else if (startInline.IsEmpty)
+                    {
+                        lbIndex = startP.Inlines.IndexOf(startInline);
+                        startP.Inlines.Remove(startInline);
+                        types = new(new(typeof(EditableRun), startInline.Id), new(typeof(EditableLineBreak), lbreak.Id));
+                    }
+                    startP.Inlines.Remove(lbreak);
+
+                    offset = 2;
+                    Undos.Add(new DeleteLineBreakUndo(startP.Id, types, lbIndex, this, originalSelectionStart, removeNext, startLineEmpty));
+
+                }
+                else
+                {  // delete normal char
+                    bool nextIsLineBreak = startInline.NextInline is EditableLineBreak;
+                    bool prevIsLineBreak = startInline.PreviousInline is EditableLineBreak;
+                    bool leaveEmptyRun =
+                       (nextIsLineBreak && prevIsLineBreak) ||
+                       (prevIsLineBreak && startInline.IsLastInlineOfParagraph) ||
+                       (nextIsLineBreak && startInline.IsFirstInlineOfParagraph);
+
+                    offset = 1;
+
+                    if (startInline.InlineLength == 1 && !leaveEmptyRun)  // keep empty run on linebreak
+                    {  // just one char in the inline, so remove it entirely, unless 
+                        if (startInline.CloneWithId() is EditableRun removedRunClone)
+                        {
+                            startP.Inlines.Remove(startInline);
+                            Undos.Add(new DeleteRunUndo(startP.Id, removedRunClone, startInlineIdx, this, originalSelectionStart));
+                        }
+                    }
+                    else
+                    { // just remove char from inline
+                        char deletedChar = startInline.InlineText[selectionStartInInline];
+
+                        if (selectionStartInInline < startInline.InlineLength)
+                            startInline.InlineText = startInline.InlineText.Remove(selectionStartInInline, 1);   // undo handled by PropertyChanged: Text
+
+                        Undos.Add(new DeleteCharUndo(startP.Id, startInline.Id, idxStartInlineInPar, deletedChar, selectionStartInInline, this, originalSelectionStart));
+                    }
+
+                    //Paragraph must always have at least an empty run
+                    if (startP.Inlines.Count == 0)
+                        startP.Inlines.Add(new EditableRun(""));
+
+                }
+            }
+
+            DisableUndoStack = false;
+
+            UpdateSelection();
+            UpdateTextRanges(Selection.Start, -offset);
+        }
+
+        Redos.Clear();
+
+        SelectionStart_Changed(Selection, Selection.Start);
+        Selection.StartParagraph.CallRequestInlinesUpdate();
+        Selection.StartParagraph.CallRequestTextLayoutInfoStart();
+
+
+    }
+
+    internal void DeleteSelection()
+    {
+        int lengthBefore = Text.Length;
+        int originalSelStart = Selection.Start;
+
+        DeleteRange(Selection, true, true, false);
+
+        SelectionExtendMode = FlowDocument.ExtendMode.ExtendModeNone;
+
+        int lengthAfter = Text.Length;
+
+        UpdateBlockAndInlineStarts(Selection.StartParagraph);
+
+
+        Selection.CollapseToStart();
+        Selection.BiasForwardStart = Selection.Start == 0 || Selection.Start == Selection.StartParagraph.StartInDoc;
+        Selection.BiasForwardEnd = Selection.End == 0 || Selection.End == Selection.StartParagraph.StartInDoc;
+
+        InvokeSelectionChanged();
+
+    }
+
+    internal (int idLeft, int idRight) DeleteRange(TextRange trange, bool addUndo, bool adjustCaret, bool doNextRedo)
+    {
+        bool docContainsOneBlock = Blocks.Count == 1;
+        int originalRangeStart = trange.Start;
+        int originalTRangeLength = trange.Length;
+        int originalRangeEnd = trange.End; // trange.Start + trange.Length;
+
+        List<Block> rangeBlocks = GetOverlappingBlocksInRange(trange, Selection.BiasForwardEnd);
+                
+        int firstBlockId = rangeBlocks.First().Id;
+        int firstBlockIndex = Blocks.IndexOf(rangeBlocks.First());
+
+        bool keepDisableUndoStack = DisableUndoStack;
+        DisableUndoStack = true;
+
+        List<Block> blocksFullyInRange = GetFullBlocksInRange(trange);
+        bool firstBlockDeleted = blocksFullyInRange.Count > 0 && blocksFullyInRange.First().StartInDoc == originalRangeStart;
+        bool lastBlockDeleted = blocksFullyInRange.Count > 0 && blocksFullyInRange.Last().EndInDoc == originalRangeEnd;
+
+        //Check if selection is at end of only inline in only paragraph
+        if (rangeBlocks.Count == 1 && rangeBlocks[0] is Paragraph p && p.Inlines.Count == 1)
+        {
+            IEditable lastInline = p.Inlines.Last();
+            if (GetCharPosInInline(lastInline, trange.Start) == lastInline.InlineLength)
+                return (lastInline.Id, -1);
+        }
+
+        if (addUndo)
+            Undos.Add(new DeleteRangeUndo(
+                rangeBlocks.ConvertAll(rblock => rblock.FullClone(true)), 
+                firstBlockIndex, 
+                this, 
+                originalRangeStart, 
+                originalRangeEnd, 
+                originalTRangeLength, 
+                firstBlockDeleted, 
+                lastBlockDeleted,
+                doNextRedo));
+            
+
+        //get the inlines in this range and split if necessary, adding newly created inlines to doc
+        (List<IEditable> createdInlines, (int idLeft, int idRight) edgeIds) createdInlinesResult = GetTextRangeInlines(trange, addToDoc: true);
+
+        List<IEditable> rangeInlines = createdInlinesResult.createdInlines;
+        (int idLeft, int idRight) edgeIds = createdInlinesResult.edgeIds;
+
+        List<Block> toRemoveBlocks = [];
+
+        //Delete the range inlines
+        foreach (IEditable toDeleteRun in rangeInlines)
+        {
+            if (AllParagraphs.FirstOrDefault(p => p.Id == toDeleteRun.MyParagraphId) is Paragraph rangePar)
+            {
+                rangePar.Inlines.Remove(toDeleteRun);
+                if (rangePar.Inlines.Count == 0)
+                {
+                    if (rangePar.IsTableCellBlock)
+                    {  // if overlapping cell blocks got deleted, they shouldn't be removed
+                        rangePar.Inlines.Add(new EditableRun(""));
+                    }
+                    else
+                        toRemoveBlocks.Add(rangePar);
+                }
+
+                rangePar.CallRequestInlinesUpdate();
+                rangePar.CallRequestTextLayoutInfoStart();
+                rangePar.CallRequestTextLayoutInfoEnd();
+            }
+        }
+
+        //Delete any full blocks contained within the range
+        foreach (Block fullyContainedBlock in blocksFullyInRange)
+        {
+            if (!fullyContainedBlock.IsTableCellBlock && !docContainsOneBlock)
+            {
+                if (fullyContainedBlock is Paragraph fullyContainedPar)
+                    fullyContainedPar.Inlines.Clear();
+                Blocks.Remove(fullyContainedBlock);
+            }
+        }
+
+        Blocks.RemoveMany(toRemoveBlocks);
+
+
+        if (rangeBlocks[0] is Paragraph firstPar)  // merging of first/last paragraphs if applicable
+        {
+            //first remove zombie paragraph if it exists
+            if (rangeBlocks.Count == 1 && firstPar.Inlines.Count == 0)
+                Blocks.Remove(firstPar);
+
+            //Merge inlines of last paragraph with first if present and both are paragraphs
+            if (rangeBlocks.Count > 1 && Blocks.Contains(firstPar))
+            {
+                if (rangeBlocks[^1] is Paragraph lastPar && !(firstPar.IsTableCellBlock || lastPar.IsTableCellBlock))
+                {
+                    List<IEditable> moveInlines = [.. lastPar.Inlines];
+                    lastPar.Inlines.RemoveMany(moveInlines);
+                    lastPar.CallRequestInlinesUpdate();
+                    firstPar.Inlines.AddRange(moveInlines);
+                    firstPar.CallRequestInlinesUpdate(); // ensure any image containers are updated
+                    Blocks.Remove(lastPar);
+                }
+            }
+
+            // LineBreak must always be followed by something
+            if (firstPar.Inlines.Count > 0 && firstPar.Inlines.LastOrDefault() is EditableLineBreak edLB)
+                firstPar.Inlines.Add(new EditableRun(""));
+
+        }
+
+        // Fix other special cases:
+        // re-add the first par if no blocks are left
+        if (Blocks.Count == 0)
+            Blocks.Add(rangeBlocks[0]);
+        
+        //Special case with one remaining block with no inlines
+        if (Blocks.Count == 1 && Blocks[0] is Paragraph onlyPar && onlyPar.Inlines.Count == 0)
+            onlyPar.Inlines.Add(new EditableRun(""));
+
+        DisableUndoStack = keepDisableUndoStack;
+
+        if (addUndo && !DisableUndoStack)
+            UpdateTextRanges(originalRangeStart, -originalTRangeLength);
+
+
+        return edgeIds;
+
+    }
+
+    internal void MergeParagraphForward(int mergeCharIndex, bool addUndo, int originalSelectionStart)
+    {
+        if (GetContainingParagraph(mergeCharIndex) is not Paragraph thisPar) return;
+
+        int thisParIndex = AllParagraphs.IndexOf(thisPar);
+        
+        if (thisParIndex == AllParagraphs.Count - 1 || (thisPar.IsCellBlock && thisPar == thisPar.OwningCell?.CellBlocks.LastOrDefault())) return; //is last Paragraph, can't merge forward
+        int origMergedParInlinesCount = thisPar.Inlines.Count;
+
+        if (AllParagraphs[thisParIndex + 1] is not Paragraph nextPar) return;
+
+        bool IsNextParagraphEmpty = nextPar.Inlines.Count == 1 && nextPar.Inlines[0].IsEmpty;
+        bool IsThisParagraphEmpty = thisPar.Inlines.Count == 1 && thisPar.Inlines[0].IsEmpty;
+
+        if (IsThisParagraphEmpty)
+        {
+            thisPar.Inlines.Clear();
+            origMergedParInlinesCount = 0;
+        }
+
+        if (addUndo)
+            Undos.Add(new MergeParagraphUndo(origMergedParInlinesCount, thisPar.Id, nextPar.FullClone(true), this, originalSelectionStart)); // cloned with Id and inlines
+
+        //bool runAdded = false;
+        if (IsNextParagraphEmpty)
+        {
+            if (IsThisParagraphEmpty)
+            {
+                thisPar.Inlines.Add(new EditableRun(""));
+                //runAdded = true;
+            }
+        }
+        else
+        {
+            List<IEditable> inlinesToMove = [.. nextPar.Inlines];
+            nextPar.Inlines.Clear();
+            nextPar.CallRequestInlinesUpdate(); // ensure image containers are updated
+            thisPar.Inlines.AddRange(inlinesToMove);
+        }
+
+        if (thisPar.IsCellBlock)
+            thisPar.OwningCell?.CellBlocks.Remove(nextPar);
+        else
+            Blocks.Remove(nextPar);
+        
+        Selection.BiasForwardStart = true;
+        Selection.BiasForwardEnd = true;
+
+        thisPar.CallRequestInlinesUpdate();
+
+        int blockIndex = thisPar.IsCellBlock ? Blocks.IndexOf(thisPar.OwningTable!) : thisParIndex;
+        UpdateBlockAndInlineStarts(blockIndex);
+        UpdateTextRanges(mergeCharIndex, -1);
+
+        thisPar.CallRequestTextBlockFocus();
+
+        UpdateSelectedParagraphs();
+
+
+    }
+
+   
+    internal void DeleteWord(bool backspace)
+{
+        if (backspace)
+            if (Selection.Start <= 0) 
+                return;
+            else
+            {
+                if (Selection.Start >= Selection.StartParagraph.StartInDoc + Selection.StartParagraph.BlockLength)
+                    return;
+            }
+                
+        if (backspace)
+            MoveLeftWord();
+
+        int originalSelectionStart = Selection.Start;
+
+        Selection.BiasForwardStart = true;
+        Selection.BiasForwardEnd = true;
+
+        Paragraph startP = Selection.StartParagraph;
+
+        if (startP.SelectionStartInBlock == startP.BlockLength - 1)
+            MergeParagraphForward(Selection.Start, true, originalSelectionStart); //updates text ranges and adds undo
+        else
+        {
+            int NextWordEndPoint = -1;
+            if (Selection.StartInline is IEditable startInline && (startInline.IsUIContainer || startInline.IsLineBreak))
+                NextWordEndPoint = Selection.Start + 1;
+            else
+            {
+                int IndexNextSpace = Selection.StartParagraph.Text.IndexOf(' ', Selection.Start - Selection.StartParagraph.StartInDoc);
+                if (IndexNextSpace == -1)
+                    IndexNextSpace = Selection.StartParagraph.BlockLength - 1;
+                else
+                    IndexNextSpace += 1;
+                NextWordEndPoint = Selection.StartParagraph.StartInDoc + IndexNextSpace;
+            }
+
+            TextRange deleteTextRange = new(this, Selection.Start, NextWordEndPoint);
+            DeleteRange(deleteTextRange, true, true, false);  // updates all text ranges, block/inline starts, and adds undo
+
+        }
+
+        Selection.StartParagraph.CallRequestInlinesUpdate();
+        Selection.StartParagraph.CallRequestTextLayoutInfoStart();
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            Select(originalSelectionStart, 0);
+            UpdateCaret();
+
+        }, DispatcherPriority.Background);
+
+
+
+    }
 
 
 }

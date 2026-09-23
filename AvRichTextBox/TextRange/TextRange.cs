@@ -1,209 +1,369 @@
-﻿using System.ComponentModel;
+﻿using Avalonia.Media.TextFormatting;
+using DocumentFormat.OpenXml.Office2010.CustomUI;
+using DocumentFormat.OpenXml.Spreadsheet;
+using DynamicData;
+using System.ComponentModel;
+using System.Text;
+using static AvRichTextBox.XamlConversions;
 
 namespace AvRichTextBox;
 
 public class TextRange : INotifyPropertyChanged, IDisposable
 {
-   public event PropertyChangedEventHandler? PropertyChanged;
-   private void InvokeProperty(PropertyChangedEventArgs pceArgs) { PropertyChanged?.Invoke(this, pceArgs); }
-   private static readonly PropertyChangedEventArgs StartChangedArgs = new(nameof(Start));
-   private static readonly PropertyChangedEventArgs EndChangedArgs = new(nameof(End));
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void InvokeProperty(PropertyChangedEventArgs pceArgs) { PropertyChanged?.Invoke(this, pceArgs); }
 
-   internal delegate void Start_ChangedHandler(TextRange sender, int newStart);
-   internal event Start_ChangedHandler? Start_Changed;
-   internal delegate void End_ChangedHandler(TextRange sender, int newEnd);
-   internal event End_ChangedHandler? End_Changed;
+    private static readonly PropertyChangedEventArgs StartChangedArgs = new(nameof(Start));
+    private static readonly PropertyChangedEventArgs EndChangedArgs = new(nameof(End));
 
-   public override string ToString() => $"{Start} → {End}";
+    private static readonly PropertyChangedEventArgs BiasForwardStartChangedArgs = new(nameof(BiasForwardStart));
+    private static readonly PropertyChangedEventArgs BiasForwardEndChangedArgs = new(nameof(BiasForwardEnd));
 
-   public TextRange(FlowDocument flowdoc, int start, int end)
-   {
-      if (end < start) throw new AvaloniaInternalException("TextRange not valid (start must be less than end)");
+    internal delegate void Start_ChangedHandler(TextRange sender, int newStart);
+    internal event Start_ChangedHandler? Start_Changed;
+    internal delegate void End_ChangedHandler(TextRange sender, int newEnd);
+    internal event End_ChangedHandler? End_Changed;
 
-      this.Start = start;
-      this.End = end;
-      myFlowDoc = flowdoc;
-      myFlowDoc.TextRanges.Add(this);
+    public string RangeString => $"{Start} → {End}  {Text[..Math.Min(Text.Length, 15)]}";
 
-   }
+#if DEBUG
+    private static readonly PropertyChangedEventArgs RangeStringChangedArgs = new(nameof(RangeString));
+#endif
 
-   internal FlowDocument myFlowDoc;
-   public int Length  => End - Start;
- 
-   public int Start { get;  set { if (field != value) { field = value; Start_Changed?.Invoke(this, value); InvokeProperty(StartChangedArgs); } } }
-   public int End { get; set { if (field != value) { field = value; End_Changed?.Invoke(this, value); InvokeProperty(EndChangedArgs); } } }
+    public TextRange(FlowDocument flowdoc, int start, int end, bool addToFlowDocTextRanges = true)
+    {
+        //if (end < start) throw new AvaloniaInternalException("TextRange not valid (start must be less than end)");
+        myFlowDoc = flowdoc;
 
-   internal Paragraph StartParagraph = null!;
-   internal Paragraph EndParagraph = null!;
+        this.Start = Math.Max(0, start);
+        this.End = Math.Min(Math.Max(start, end), flowdoc.Text.Length);
 
-   internal Rect PrevCharRect;
-   internal Rect StartRect { get; set; }
-   internal Rect EndRect { get; set; }
-   internal bool IsAtEndOfLineSpace = false;
-   internal bool IsAtEndOfLine = false;
-   internal bool IsAtLineBreak = false;
-   internal bool IsAtCellBreak = false;
+        if (addToFlowDocTextRanges)
+        {
+            //insert in order of Start/End
+            int insertIdx = myFlowDoc.TextRanges.Count;
+            for (int i = 0; i < myFlowDoc.TextRanges.Count; i++)
+            {
+                var tr = myFlowDoc.TextRanges[i];
+                if (tr.Start > this.Start || (tr.Start == this.Start && tr.End >= this.End))
+                {
+                    insertIdx = i;
+                    break;
+                }
+            }
 
-   internal bool BiasForwardStart = true;
-   internal bool BiasForwardEnd = true;
-   public void CollapseToStart() { End = Start;  }
-   public void CollapseToEnd() { Start = End ; }
+            myFlowDoc.TextRanges.Insert(insertIdx, this);
 
+        }
+
+
+    }
+
+    public void Delete()
+    {
+        myFlowDoc.TextRanges.Remove(this);
+    }
+
+    internal void InvokeStartEndChanged()
+    {
+        Start_Changed?.Invoke(this, Start);
+        End_Changed?.Invoke(this, End);
+    }
+
+    internal FlowDocument myFlowDoc;
+    public int Length => End - Start;
+
+    public int Start
+    {
+        get;
+        set
+        {
+            if (field != value)
+            {
+                field = value;
+                UpdateContextStart();
+                Start_Changed?.Invoke(this, value);
+                InvokeProperty(StartChangedArgs);
+#if DEBUG
+                InvokeProperty(RangeStringChangedArgs);
+#endif
+            }
+        }
+    }
+
+    public int End
+    {
+        get;
+        set
+        {
+            if (field != value)
+            {
+                field = value;
+                UpdateContextEnd();
+                End_Changed?.Invoke(this, value);
+                InvokeProperty(EndChangedArgs);
+#if DEBUG
+                InvokeProperty(RangeStringChangedArgs);
+#endif
+            }
+        }
+    }
+
+    internal bool BiasForwardStart { get; set { if (field == value) return; field = value; UpdateContextStart(); InvokeProperty(BiasForwardStartChangedArgs); } }
+    internal bool BiasForwardEnd { get; set { if (field == value) return; field = value; UpdateContextEnd(); InvokeProperty(BiasForwardEndChangedArgs); } }
+
+    internal Rect PrevCharRect;
+    internal Rect StartRect { get; set; }
+    internal Rect EndRect { get; set; }
     
-   internal int CalculateStartInInline(IEditable inline)
-   {
-      return this.Start - (StartParagraph.StartInDoc + inline.TextPositionOfInlineInParagraph);
-   }
+    public Rect GetStartRect 
+    {
+        get
+        {
+            Rect startRect = new();
+            try
+            {
+                Paragraph startPar = myFlowDoc.GetContainingParagraph(this.Start);
+                startRect = startPar.TextLayout.HitTestTextPosition(this.Start - startPar.StartInDoc);
+                startRect = startRect.WithY(startRect.Y + startPar.DocICRelativeTop);
+            }
+            catch { Debug.WriteLine("error getting textrange start rectangle");  }
+            //Debug.WriteLine("startrect: " + startRect.ToString());
 
-   internal int CalculateEndInInline(IEditable inline)
-   {
-      return this.End - (EndParagraph.StartInDoc + inline.TextPositionOfInlineInParagraph);
-   }
+            return startRect;
+        }
+    }
 
-   internal IEditable? GetStartInline()
-   {
-      IsAtLineBreak = false;
-      IsAtCellBreak = false;
+    //Context awareness flags   //////////////
+    internal Paragraph StartParagraph = null!;
+    internal Paragraph EndParagraph = null!;
 
-      if (GetStartPar() is not Paragraph startPar) return null;
-      IEditable? startInline = null;
-      
-      if (BiasForwardStart)
-      {
-         IEditable? startInlineReal = startPar.Inlines.LastOrDefault(ied => startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= Start);
-         startInline = startPar.Inlines.LastOrDefault(ied => !ied.IsLineBreak && startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= Start);
-         IsAtLineBreak = startInline != startInlineReal;
-      }
-      else
-      {
-         if (Start == startPar.StartInDoc)
-            startInline = startPar.Inlines.FirstOrDefault();
-         else
-         {
-            startInline = startPar.Inlines.LastOrDefault(ied => startPar.StartInDoc + ied.TextPositionOfInlineInParagraph < Start);
-            IEditable? startInlineUpToLineBreak = startPar.Inlines.LastOrDefault(ied => !ied.IsLineBreak && startPar.StartInDoc + ied.TextPositionOfInlineInParagraph < Start);
-            if (startInline != null && startInline.IsLineBreak)
-               startInline = myFlowDoc.GetNextInline(startInline) ?? startInline;
-            IsAtLineBreak = startInline != startInlineUpToLineBreak;
-         }
-      }
+    internal IEditable? StartInline = null!;
+    internal IEditable? EndInline = null!;
+    internal IEditable? StartInlinePrevious = null!;
+    internal IEditable? EndInlinePrevious = null!;
 
-      //Check if at cellbreak
-      if (startInline != null && startInline.IsTableCellInline && startInline.IsLastInlineOfParagraph)
-            IsAtCellBreak = CalculateStartInInline(startInline) >= startInline.InlineText.Length;
+    internal bool IsAtEndOfLineSpace = false;
+    internal bool IsAtEndOfLine = false;
+    /////////////////////////////////////////  
 
-      return startInline;
+    public void CollapseToStart() { End = Start; }
+    public void CollapseToEnd() { Start = End; }
 
-   }
+    internal int CalculateStartInInline(IEditable inline) => this.Start - (StartParagraph.StartInDoc + inline.TextPositionOfInlineInParagraph);
+    internal int CalculateEndInInline(IEditable inline) => this.End - (EndParagraph.StartInDoc + inline.TextPositionOfInlineInParagraph);
 
-   internal IEditable? GetEndInline()
-   {
-      if (GetEndPar() is not Paragraph endPar) return null;
+    internal void UpdateContextStart()
+    {
+        if (GetStartPar() is not Paragraph startPar) return;
+        this.StartParagraph = startPar;
 
-      IEditable? endInline = null;
+        //if (StartParagraph.Inlines.LastOrDefault(ied => StartParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph <= Start) is IEditable startinline)
+        int relStart = BiasForwardStart ? Start + 1 : Start;
+        if (StartParagraph.Inlines.LastOrDefault(ied => StartParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph < relStart) is IEditable startinline)
+        {
+            StartInline = startinline;
 
-      //if (trange.BiasForwardStart && trange.Length == 0)
-      if (BiasForwardStart)
-         endInline = endPar.Inlines.LastOrDefault(ied => endPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= End);
-      else
-         endInline = endPar.Inlines.LastOrDefault(ied => endPar.StartInDoc + ied.TextPositionOfInlineInParagraph < End);
+            if (StartInline is EditableLineBreak elb)
+                StartInline = elb.PreviousInline;
+        }
+
+        //if (StartParagraph.Inlines.LastOrDefault(ied => StartParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph < Start) is IEditable startinlineprev)
+        if (StartParagraph.Inlines.LastOrDefault(ied => StartParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph < relStart - 1) is IEditable startinlineprev)
+        {
+            StartInlinePrevious = startinlineprev;
+        }
+
+    }
+
+    internal void UpdateContextEnd()
+    {
+        if (GetEndPar() is not Paragraph endPar) return;
+        this.EndParagraph = endPar;
+
+        //if (EndParagraph.Inlines.LastOrDefault(ied => EndParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph <= End) is IEditable endinline)
+        int relEnd = BiasForwardEnd ? End + 1 : End;
+        if (EndParagraph.Inlines.LastOrDefault(ied => EndParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph < relEnd) is IEditable endinline)
+        {
+            EndInline = endinline;
+
+            if (EndInline is EditableLineBreak elb)
+                EndInline = elb.PreviousInline;
+        }
+        
+        //if (EndParagraph.Inlines.LastOrDefault(ied => EndParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph < End) is IEditable endinlineprev)
+        if (EndParagraph.Inlines.LastOrDefault(ied => EndParagraph.StartInDoc + ied.TextPositionOfInlineInParagraph < relEnd - 1) is IEditable endinlineprev)
+        {
+            EndInlinePrevious = endinlineprev;
+        }
+
+    }
+
+    //public Paragraph? GetStartPar() => myFlowDoc.AllParagraphs.LastOrDefault(p => p.StartInDoc <= Start);
+    public Paragraph? GetStartPar() => myFlowDoc.AllParagraphs.LastOrDefault(p => this.BiasForwardStart ? p.StartInDoc <= Start : p.StartInDoc < Start);
+    public Paragraph? GetEndPar() => myFlowDoc.AllParagraphs.LastOrDefault(p => ((p.Inlines.Count == 1 && p.Inlines[0].IsUIContainer) || !this.BiasForwardEnd) ? p.StartInDoc < End : p.StartInDoc <= End);
+
+    internal bool GetIsEndAtStartOfEndInline => End == EndParagraph.StartInDoc + EndInline?.TextPositionOfInlineInParagraph;
+    internal bool GetIsStartAtStartOfStartInline => Start == StartParagraph.StartInDoc + StartInline?.TextPositionOfInlineInParagraph;
+
+    internal bool GetIsAtCellEnd => StartParagraph == StartParagraph.OwningCell?.CellBlocks.LastOrDefault() && StartParagraph.SelectionStartInBlock >= StartParagraph.BlockLength - 1;
+    internal bool GetIsAtCellStart => StartParagraph == StartParagraph.OwningCell?.CellBlocks.FirstOrDefault() && StartParagraph.SelectionStartInBlock == 0;
+
+    public object? GetFormatting(AvaloniaProperty avProp)
+    {
+        object? formatting = null;
+        if (myFlowDoc == null) return null;
+        if (StartInline is IEditable currentInline)
+            formatting = GetFormattingOfInline(avProp, currentInline);
+
+        return formatting;
+    }
+
+    internal static object? GetFormattingOfInline(AvaloniaProperty avProperty, IEditable inline)
+    {
+        object? returnValue = null;
+
+        if (inline is EditableRun run)
+        {
+            switch (avProperty.Name)
+            {
+                case "Bold": returnValue = run.FontWeight; break;
+                case "FontFamily": returnValue = run.FontFamily; break;
+                case "FontStyle": returnValue = run.FontStyle; break;
+                case "TextDecorations": returnValue = run.TextDecorations; break;
+                case "FontSize": returnValue = run.FontSize; break;
+                case "Background": returnValue = run.Background; break;
+                case "Foreground": returnValue = run.Foreground; break;
+                case "FontStretch": returnValue = run.FontStretch; break;
+                case "BaselineAlignment": returnValue = run.BaselineAlignment; break;
+            }
+        }
+
+        return returnValue;
+    }
+
+    public void ApplyFormatting(AvaloniaProperty avProp, object? newValue)
+    {
+        if (myFlowDoc == null) return;
+        if (Length < 1) return;
+        if (this.Text == "") return;
+
+        myFlowDoc.ApplyFormattingRange(avProp, newValue, this);
+
+        BiasForwardStart = false;
+        BiasForwardEnd = false;
 
 
-      //Check if at cellbreak
-      if (endInline != null && endInline.IsTableCellInline && endInline.IsLastInlineOfParagraph)
-         IsAtCellBreak = CalculateEndInInline(endInline) >= endInline.InlineText.Length;
+    }
 
-      return endInline;
-   }
+    internal string GetText()
+    {
+        if (myFlowDoc == null) return "";
+        return myFlowDoc.GetText(this);
+    }
 
-   public Paragraph? GetStartPar() => myFlowDoc.AllParagraphs.LastOrDefault(p => p.StartInDoc <= Start);
-   public Paragraph? GetEndPar() => myFlowDoc.AllParagraphs.LastOrDefault(p => p.StartInDoc < End);
+    public string Text
+    {
+        get => GetText();
+        set => myFlowDoc.SetRangeToText(this, value);
+    }
 
-   public object? GetFormatting(AvaloniaProperty avProp)
-   {
-      object? formatting = null;
-      if (myFlowDoc == null) return null;
-      if (GetStartInline() is IEditable currentInline)
-         formatting = GetFormattingOfInline(avProp, currentInline);
-      
-      return formatting;
-   }
+    public void Save(Stream stream, ContentDataFormat dataFormat)
+    {
+        switch (dataFormat)
+        {
+            case ContentDataFormat.Xaml:
 
-   internal static object? GetFormattingOfInline(AvaloniaProperty avProperty, IEditable inline)
-   {
-      object? returnValue = null;
+                StringBuilder rangeXamlBuilder = new(SectionTextDefault);
+                rangeXamlBuilder.Append(GetParagraphRunsXaml(myFlowDoc.GetTextRangeInlines(this, addToDoc: false).createdInlines, isXamlPackage: false));
+                rangeXamlBuilder.Append("</Section>");
+                byte[] xamlStringBytes = Encoding.UTF8.GetBytes(rangeXamlBuilder.ToString());
+                stream.Write(xamlStringBytes, 0, xamlStringBytes.Length);
+                break;
 
-      if (inline is EditableRun run)
-      {
-         switch (avProperty.Name)
-         {
-            case "Bold": returnValue = run.FontWeight; break;
-            case "FontFamily": returnValue = run.FontFamily; break;
-            case "FontStyle": returnValue = run.FontStyle; break;
-            case "TextDecorations": returnValue = run.TextDecorations; break;
-            case "FontSize": returnValue = run.FontSize; break;
-            case "Background": returnValue = run.Background; break;
-            case "Foreground": returnValue = run.Foreground; break;
-            case "FontStretch": returnValue = run.FontStretch; break;
-            case "BaselineAlignment": returnValue = run.BaselineAlignment; break;
-         }
-      }
+            case ContentDataFormat.XamlPackage:
 
-      return returnValue;
-   }
+                break;
 
-   public void ApplyFormatting(AvaloniaProperty avProp, object value)
-   {
-      if (myFlowDoc == null) return;
-      if (Length < 1) return;
-      if (this.Text == "") return;
+            case ContentDataFormat.Text:
 
-      myFlowDoc.ApplyFormattingRange(avProp, value, this);
+                byte[] textStringBytes = Encoding.UTF8.GetBytes(this.Text);
+                stream.Write(textStringBytes, 0, textStringBytes.Length);
+                break;
 
-      BiasForwardStart = false;
-      BiasForwardEnd = false;
-      
-   }
+            case ContentDataFormat.Rtf:
 
-   internal string GetText()
-   {
-      if (myFlowDoc == null) return "";
-      return myFlowDoc.GetText(this);
-   }
- 
-   public string Text
-   {
-      get => GetText();
-      set => myFlowDoc.SetRangeToText(this, value);
-   }
+                byte[] rtfStringBytes = Encoding.UTF8.GetBytes(RtfConversions.GetRtfFromInlines(myFlowDoc.GetTextRangeInlines(this, addToDoc: false).createdInlines));
+                stream.Write(rtfStringBytes, 0, rtfStringBytes.Length);
+                break;
+        }
 
-   public void Dispose()
-   {    
-      Dispose(true);
-      GC.SuppressFinalize(this);
-    
-   }
 
-   private bool _disposed = false;
-   protected virtual void Dispose(bool disposing)
-   {
-      if (_disposed)
-         return;
+    }
 
-      if (disposing)
-      {
-         StartParagraph = null!;
-         EndParagraph = null!;
+    public void Load(Stream stream, ContentDataFormat dataFormat)
+    {
+        myFlowDoc.DeleteRange(this, false, false, false);
 
-         Start_Changed = null;
-         End_Changed = null;
-         this.Start = 0; this.End = 0;
-         myFlowDoc.TextRanges.Remove(this);
-         myFlowDoc = null!;
+        byte[] streamBytes = new byte[stream.Length];
+        stream.ReadExactly(streamBytes);
+        string readString = Encoding.UTF8.GetString(streamBytes, 0, streamBytes.Length);
+        List<int> addedBlockIds = []; // dummy or use for undo
 
-      }
-      _disposed = true;
-   }
+        switch (dataFormat)
+        {
+            case ContentDataFormat.Xaml:
+
+                myFlowDoc.InsertXaml(streamBytes, StartParagraph, EndParagraph, this, myFlowDoc.AllParagraphs.IndexOf(StartParagraph), addedBlockIds);
+                break;
+
+            case ContentDataFormat.XamlPackage:
+
+                break;
+
+            case ContentDataFormat.Text:
+
+                this.Text = readString;
+                break;
+
+            case ContentDataFormat.Rtf:
+
+                myFlowDoc.InsertRTF(streamBytes, StartParagraph, this, myFlowDoc.AllParagraphs.IndexOf(StartParagraph), addedBlockIds);
+                break;
+        }
+
+
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+
+    }
+
+    private bool _disposed = false;
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            StartParagraph = null!;
+            EndParagraph = null!;
+
+
+
+            Start_Changed = null;
+            End_Changed = null;
+            this.Start = 0; this.End = 0;
+            myFlowDoc.TextRanges.Remove(this);
+            myFlowDoc = null!;
+
+        }
+        _disposed = true;
+    }
 
 
 

@@ -1,7 +1,9 @@
+using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input.TextInput;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 
 namespace AvRichTextBox;
 
@@ -73,18 +75,73 @@ public partial class RichTextBox
    }
 
 
-   private readonly Rectangle? _CaretRect = new()
+   private readonly Rectangle _CaretRect = new()
    {
-      StrokeThickness = 2,
+      Fill = Brushes.Black,
+      StrokeThickness = 0,
       Stroke = Brushes.Black,
       Height = 20,
-      Width = 1.5,
+      Width = 2,
       IsVisible = false,
       HorizontalAlignment = HorizontalAlignment.Left,
       VerticalAlignment = VerticalAlignment.Top,
       IsHitTestVisible = false
    };
 
+
+   internal readonly Avalonia.Controls.Shapes.Path SelectionPath = new()
+   {
+      Opacity = 0.35,
+      IsHitTestVisible = false
+   };
+   
+   private readonly PathGeometry _geometry = new() { Figures = [] };
+   
+   internal static PathFigure GetLineRectanglePath(Rect lineRect)
+   {          
+      double tlineTop = lineRect.Top;
+      double tlineRight = lineRect.Right;
+      double tlineBottom = lineRect.Bottom;
+      double tlineLeft = lineRect.Left;
+
+      PathFigure newPathFig = new()
+      {
+         IsClosed = true,
+         IsFilled = true,
+         StartPoint = new Point(tlineLeft, tlineTop),
+         Segments = []
+      };
+
+      PolyLineSegment newPolyLine = new() { Points = [] };
+
+      newPolyLine.Points.Add(new Point(tlineRight, tlineTop));
+      newPolyLine.Points.Add(new Point(tlineRight, tlineBottom));
+      newPolyLine.Points.Add(new Point(tlineLeft, tlineBottom));
+
+      newPathFig.Segments.Add(newPolyLine);
+
+      return newPathFig;
+
+   }
+
+   private void UpdateCaretBrush()
+   {
+      if (CaretBrush != null)
+      {
+         _CaretRect.Fill = CaretBrush;
+         _CaretRect.Stroke = CaretBrush;
+      }
+      else if (this.TryFindResource("TextControlForeground", this.ActualThemeVariant, out var resource) && resource is IBrush brush)
+      {
+         _CaretRect.Fill = brush;
+         _CaretRect.Stroke = brush;
+      }
+      else
+      {
+         _CaretRect.Fill = Brushes.Black;
+         _CaretRect.Stroke = Brushes.Black;
+      }
+   }
 
 }
 

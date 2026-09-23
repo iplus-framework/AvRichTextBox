@@ -73,6 +73,9 @@ public partial class RichTextBox
       }
 
       UpdateCurrentParagraphLayout();
+      
+      //_ = FlowDoc.AsyncUpdateCaret(FlowDoc.Selection);
+
    }
 
    

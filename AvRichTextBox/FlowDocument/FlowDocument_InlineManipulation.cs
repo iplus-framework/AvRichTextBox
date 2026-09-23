@@ -4,282 +4,248 @@ namespace AvRichTextBox;
 
 public partial class FlowDocument
 {
-   internal int GetCharPosInInline(IEditable inline, int absPos)
-   {
-      if (AllParagraphs.FirstOrDefault(p => p.Id == inline.MyParagraphId) is not Paragraph inlinePar) return -1;
+    internal int GetCharPosInInline(IEditable inline, int absPos)
+    {
+        if (AllParagraphs.FirstOrDefault(p => p.Id == inline.MyParagraphId) is not Paragraph inlinePar) return -1;
+        return absPos - inlinePar.StartInDoc - inline.TextPositionOfInlineInParagraph;
+    }
+     
+    internal int GetAbsPositionOfInlineInDoc (IEditable inline)
+    {
+        if (AllParagraphs.FirstOrDefault(p => p.Id == inline.MyParagraphId) is not Paragraph inlinePar) return -1;
+        return inlinePar.StartInDoc + inline.TextPositionOfInlineInParagraph;
+    }
 
-      return absPos - inlinePar.StartInDoc - inline.TextPositionOfInlineInParagraph;
-   }
+    internal (List<IEditable> createdInlines, (int idLeft, int idRight) edgeIds) GetTextRangeInlines(TextRange trange, bool addToDoc)
+    {
 
-   internal List<IEditable> GetRangeInlines(TextRange trange)
-   {
-      if (trange.GetStartPar() is not Paragraph startPar) return [];
-      if (trange.GetEndPar() is not Paragraph endPar) return [];
+        (int idLeft, int idRight) edgeIds = new(-1, -1);
 
-      //Create clones of all inlines
-      List<IEditable> AllSelectedInlines = AllParagraphs.SelectMany( p => p.Inlines.Where(iline => 
+        List<IEditable> AllSelectedInlines = [.. AllParagraphs.SelectMany(p => p.Inlines.Where(iline =>
+      {
+         int ilineAbsoluteStart = p.StartInDoc + iline.TextPositionOfInlineInParagraph;
+         int ilineAbsoluteEnd = ilineAbsoluteStart + iline.InlineLength;
+         //bool EndAtLeastStart = ilineAbsoluteEnd >= trange.Start;
+         bool EndAtLeastStart = ilineAbsoluteEnd > trange.Start;
+         bool EndsAtInlineStart = ilineAbsoluteStart == trange.End;
+
+         bool withinRange = (iline.IsLastInlineOfParagraph && iline is not EditableInlineUIContainer) switch
          {
-            double absInlineStart = p.StartInDoc + iline.TextPositionOfInlineInParagraph;
-            double absInlineEnd = p.StartInDoc + iline.TextPositionOfInlineInParagraph + iline.InlineLength;
-            return absInlineEnd > trange.Start && absInlineStart < trange.End;
-         })
-      ).ToList().ConvertAll(il => 
-      {
-         IEditable clonedInline = il.Clone();
-         if (il.IsLastInlineOfParagraph)  //replace paragraph ends with \r\n sequence
-            clonedInline.InlineText += Environment.NewLine;
-         return clonedInline; 
-      });
+            true => EndAtLeastStart && ilineAbsoluteStart <= trange.End && (iline.IsEmpty || !EndsAtInlineStart),
+            false => EndAtLeastStart && ilineAbsoluteStart < trange.End
+         };
 
-      //Edge case
-      if (AllSelectedInlines.Count == 0)
-         AllSelectedInlines = AllParagraphs.SelectMany(p =>
-            p.Inlines.Where(iline => p.StartInDoc + iline.TextPositionOfInlineInParagraph + iline.InlineLength >= trange.Start &&
-             p.StartInDoc + iline.TextPositionOfInlineInParagraph < trange.End)).ToList().ConvertAll(il => il.Clone());
-
-      IEditable firstInline = AllSelectedInlines[0];
-      int firstInlineSplitIndex = Math.Min(trange.Start - startPar.StartInDoc - firstInline.TextPositionOfInlineInParagraph, firstInline.InlineText.Length);
-
-      if (AllSelectedInlines.Count == 1)
-      {
-         int lastInlineSplitIndex = trange.End - endPar.StartInDoc - firstInline.TextPositionOfInlineInParagraph;
-         //firstInline.InlineText = firstInline.InlineText[firstInlineSplitIndex..lastInlineSplitIndex];
-         firstInline.InlineText = firstInline.IsEmpty ? "" : firstInline.InlineText[firstInlineSplitIndex..lastInlineSplitIndex];
-      }
-      else
-      {
-         IEditable lastInline = AllSelectedInlines[^1];
-         int lastInlineSplitIndex = trange.End - endPar.StartInDoc - lastInline.TextPositionOfInlineInParagraph;
-         firstInline.InlineText = firstInline.InlineText[firstInlineSplitIndex ..];
-         lastInline.InlineText = lastInline.InlineText[..lastInlineSplitIndex];
-      }
-
-      return AllSelectedInlines;
-
-   }
-
-   
-   internal List<IEditable> GetRangeInlinesAndAddToDoc(TextRange trange, out (int idLeft, int idRight) edgeIds)
-   {
-      edgeIds = new();
-
-      List<IEditable> AllSelectedInlines = [.. AllParagraphs.SelectMany(p => p.Inlines.Where(iline =>
-      {
-         var ilineAbsoluteStart = p.StartInDoc + iline.TextPositionOfInlineInParagraph;
-         return ilineAbsoluteStart + iline.InlineLength > trange.Start && ilineAbsoluteStart < trange.End;
+         return withinRange;
       }
       ))];
 
-      //Edge case where range length is 0 and starts at inline end
-      if (AllSelectedInlines.Count == 0)
-         AllSelectedInlines = [.. AllParagraphs.SelectMany(p => p.Inlines.Where(iline => 
+        //Edge case where range length is 0 and starts at inline end
+        if (AllSelectedInlines.Count == 0)
+            AllSelectedInlines = [.. AllParagraphs.SelectMany(p => p.Inlines.Where(iline =>
          {
             var ilineAbsoluteStart = p.StartInDoc + iline.TextPositionOfInlineInParagraph;
-            return ilineAbsoluteStart + iline.InlineLength >= trange.Start && ilineAbsoluteStart < trange.End; 
+            return (iline is EditableRun) && ilineAbsoluteStart + iline.InlineLength >= trange.Start && ilineAbsoluteStart < trange.End;
+            //return (iline is EditableRun) && ilineAbsoluteStart + iline.InlineLength >= trange.Start && ilineAbsoluteStart <= trange.End;
          }
          ))];
-            
 
-      if (AllSelectedInlines.Count == 0 ||
-         trange.GetStartPar() is not Paragraph startPar ||
-         trange.GetEndPar() is not Paragraph endPar) 
-         return [];
 
-      //Debug.WriteLine("\ntouched inlines=\n" + string.Join("\n", AllSelectedInlines.ConvertAll(il => il.InlineText + " :: " + il.Id)));
+        if (AllSelectedInlines.Count == 0 ||
+           trange.GetStartPar() is not Paragraph startPar ||
+           trange.GetEndPar() is not Paragraph endPar)
+        {
+            edgeIds.idRight = trange.StartInline?.Id ?? 0;
+            return ([], edgeIds);
+        }
 
-      IEditable firstInline = AllSelectedInlines[0];
-      IEditable lastInline = AllSelectedInlines[^1];
-      IEditable insertLastInline = lastInline.Clone();
-      IEditable insertFirstInline = firstInline.Clone();
+        if (!addToDoc)
+        {  // make clones when copying
+            AllSelectedInlines = AllSelectedInlines.ConvertAll(il =>
+            {
+                IEditable clonedInline = il.Clone();
+                if (il.IsLastInlineOfParagraph)  //replace paragraph ends with \r\n sequence
+                    clonedInline.InlineText += Environment.NewLine;  // TODO: Add paragraph properties here to create rtf \pard - IEditable will have list of paragraph properties
+                return clonedInline;
+            });
+        }
 
-      edgeIds.idLeft = firstInline.Id;
-      edgeIds.idRight = lastInline.Id;
+        IEditable firstInline = AllSelectedInlines[0];
+        IEditable lastInline = AllSelectedInlines[^1];
+        IEditable insertLastInline = lastInline.Clone();
+        IEditable insertFirstInline = firstInline.Clone();
 
-      int lastInlineSplitIndex = trange.End - endPar.StartInDoc - lastInline.TextPositionOfInlineInParagraph;
-      int firstInlineSplitIndex = trange.Start - startPar.StartInDoc - firstInline.TextPositionOfInlineInParagraph;
-      bool RangeEndsAtInlineEnd = lastInlineSplitIndex >= lastInline.InlineLength;
+        edgeIds.idLeft = firstInline.Id;
+        edgeIds.idRight = lastInline.Id;
 
-      string lastInlineText = lastInline.InlineText;
-      string firstInlineText = firstInline.InlineText;
-      int indexOfLastInline = endPar.Inlines.IndexOf(lastInline);
 
-      if (AllSelectedInlines.Count == 1)
-      {  // Range contained within one inline
-         
-         if (!RangeEndsAtInlineEnd)
-         {
-            insertLastInline.InlineText = lastInlineText[..lastInlineSplitIndex];
-            lastInline.InlineText = lastInlineText[lastInlineSplitIndex..];
-            AllSelectedInlines.Remove(lastInline);
-            AllSelectedInlines.Add(insertLastInline);
-            endPar.Inlines.Insert(indexOfLastInline, insertLastInline);
+        //$$$$$$$$$$$$$$$$
+        int lastInlineSplitIndex = trange.End - endPar.StartInDoc - lastInline.TextPositionOfInlineInParagraph;
+        int firstInlineSplitIndex = trange.Start - startPar.StartInDoc - firstInline.TextPositionOfInlineInParagraph;
 
-            firstInlineText = insertLastInline.InlineText;
-            insertFirstInline = insertLastInline.Clone();
-            
-            firstInlineSplitIndex = Math.Min(firstInlineSplitIndex, firstInlineText.Length);
-         }
-         
-         bool RangeStartsAtInlineStart = firstInlineSplitIndex <= 0;
+        bool RangeEndsAtInlineEnd = lastInlineSplitIndex >= lastInline.InlineLength;
+        string lastInlineText = lastInline.InlineText;
+        string firstInlineText = firstInline.InlineText;
+        int indexOfLastInline = endPar.Inlines.IndexOf(lastInline);
 
-         if (!RangeStartsAtInlineStart)
-         {
-            insertFirstInline.InlineText = firstInlineText[..firstInlineSplitIndex];
-            insertLastInline.InlineText = firstInlineText[firstInlineSplitIndex..];
-            startPar.Inlines.Insert(indexOfLastInline, insertFirstInline);
-            edgeIds.idLeft = insertFirstInline.Id;
+        if (AllSelectedInlines.Count == 1)
+        {  // Range contained within one inline
 
-            if (RangeEndsAtInlineEnd)
-               lastInline.InlineText = firstInlineText[firstInlineSplitIndex..];
-         }
-      }
-      else
-      {
-         
-         //split last run and remove trailing excess run from list
-         if (!RangeEndsAtInlineEnd)
-         {
-            insertLastInline.InlineText = lastInlineText[..lastInlineSplitIndex];
-            lastInline.InlineText = lastInlineText[lastInlineSplitIndex..];
-            AllSelectedInlines.Remove(lastInline);
-            AllSelectedInlines.Add(insertLastInline);
-            endPar.Inlines.Insert(indexOfLastInline, insertLastInline);
+            if (!RangeEndsAtInlineEnd)
+            {
+                insertLastInline.InlineText = lastInlineText[..lastInlineSplitIndex];
+                lastInline.InlineText = lastInlineText[lastInlineSplitIndex..];
+                AllSelectedInlines.Remove(lastInline);
+                AllSelectedInlines.Add(insertLastInline);
 
-            firstInlineSplitIndex = Math.Min(firstInlineSplitIndex, firstInlineText.Length);
-         }
-                  
-         int indexOfFirstInline = startPar.Inlines.IndexOf(firstInline);
-                  
-         bool RangeStartsAtInlineStart = firstInlineSplitIndex <= 0;
+                if (addToDoc)
+                    endPar.Inlines.Insert(indexOfLastInline, insertLastInline);  //$$$$$$$$$$$$$$$$  error on delete word at par end
 
-         // split first run and remove initial excess run from list
-         if (!RangeStartsAtInlineStart)
-         {
-            firstInline.InlineText = firstInlineText[..firstInlineSplitIndex];
-            insertFirstInline.InlineText = firstInlineText[firstInlineSplitIndex..];
-            AllSelectedInlines.Remove(firstInline);
-            AllSelectedInlines.Insert(0, insertFirstInline);
-            
-            startPar.Inlines.Insert(indexOfFirstInline + 1, insertFirstInline);
-            //if (RangeEndsAtInlineEnd)
-               //lastInline.InlineText = firstInlineText[firstInlineSplitIndex..];
-         }
+                firstInlineText = insertLastInline.InlineText;
+                insertFirstInline = insertLastInline.Clone();
 
-         //Debug.WriteLine("\nInlines to convert=\n" + string.Join("\n", AllSelectedInlines.ConvertAll(il => il.InlineText + " :: " + il.Id)));
-      }
+                firstInlineSplitIndex = Math.Min(firstInlineSplitIndex, firstInlineText.Length);
 
-      startPar.CallRequestInlinesUpdate();
-      endPar.CallRequestInlinesUpdate();
-      UpdateBlockAndInlineStarts(AllParagraphs.IndexOf(startPar));
- 
-    
-      return AllSelectedInlines;
+            }
 
-   }
+            bool RangeStartsAtInlineStart = firstInlineSplitIndex <= 0;
 
-   internal List<IEditable> SplitRunAtPos(int charPos, IEditable inlineToSplit, int splitPos)
-   {
-      //if (inlineToSplit.IsUIContainer)
-      //   return [new EditableRun(""), inlineToSplit];
-      if (GetContainingParagraph(charPos) is not Paragraph containingPar) return [];
-      ObservableCollection<IEditable> inlines = containingPar.Inlines;
+            if (!RangeStartsAtInlineStart)
+            {
+                insertFirstInline.InlineText = firstInlineText[..firstInlineSplitIndex];
+                insertLastInline.InlineText = firstInlineText[firstInlineSplitIndex..];
+                edgeIds.idLeft = insertFirstInline.Id;
 
-      int runIdx = inlines.IndexOf(inlineToSplit);
+                if (addToDoc)
+                {
+                    if (indexOfLastInline <= startPar.Inlines.Count)
+                        startPar.Inlines.Insert(indexOfLastInline, insertFirstInline);
+                }
+                
+                if (RangeEndsAtInlineEnd)
+                    lastInline.InlineText = firstInlineText[firstInlineSplitIndex..];
+            }
+        }
+        else
+        {
+            //split last run and remove trailing excess run from list
+            if (!RangeEndsAtInlineEnd)
+            {  //Debug.WriteLine("lastinlinesplitinex = " + lastInlineSplitIndex + "\ninlintext = " +  lastInlineText);
 
-      //splitPos = Math.Min(splitPos, inlineToSplit.InlineLength);
+                if (lastInlineSplitIndex > -1)  // guard sometimes needed but why $$$$$$$$$$$$$$$$$
+                {
+                    insertLastInline.InlineText = lastInlineText[..lastInlineSplitIndex];
+                    firstInlineSplitIndex = Math.Min(firstInlineSplitIndex, firstInlineText.Length);
+                    lastInline.InlineText = lastInlineText[lastInlineSplitIndex..];
+                    AllSelectedInlines.Remove(lastInline);
+                    AllSelectedInlines.Add(insertLastInline);
 
-      string part2Text = inlineToSplit.InlineText[splitPos..];
+                    if (addToDoc)
+                        endPar.Inlines.Insert(indexOfLastInline, insertLastInline);
+                }
+            }
 
-      inlineToSplit.InlineText = inlineToSplit.InlineText[..splitPos];
-      IEditable insertInline = inlineToSplit.Clone();
-      insertInline.InlineText = part2Text;
-      inlines.Insert(runIdx + 1, insertInline);
+            bool RangeStartsAtInlineStart = firstInlineSplitIndex <= 0;
 
-      return [inlineToSplit, insertInline];
-   }
+            // split first run and remove initial excess run from list
+            if (!RangeStartsAtInlineStart && firstInlineText != "")
+            {  //Debug.WriteLine("firstinline text = " + firstInlineText + ", " + firstInlineText.Length + ", splitidx = " + firstInlineSplitIndex);
+                
+                if (firstInlineSplitIndex < firstInlineText.Length)
+                    insertFirstInline.InlineText = firstInlineText[firstInlineSplitIndex..];
 
-   internal Paragraph? GetNextParagraph(Paragraph par)
-   {
-      List<Paragraph> allPars = AllParagraphs;
-      int myindex = allPars.IndexOf(par);
-      if (myindex == allPars.Count - 1) return null!;
-      return allPars[myindex + 1]  ?? null;
-      
-   }
-   
-   internal Paragraph? GetPreviousParagraph(Paragraph par)
-   {
-      List<Paragraph> allPars = AllParagraphs;
-      int myindex = allPars.IndexOf(par);
-      return myindex == 0 ? null : allPars[myindex - 1];
+                int indexOfFirstInline = startPar.Inlines.IndexOf(firstInline);
+                
+                if (firstInlineSplitIndex < firstInlineText.Length)
+                    firstInline.InlineText = firstInlineText[..firstInlineSplitIndex];
+                
+                AllSelectedInlines.Remove(firstInline);
+                AllSelectedInlines.Insert(0, insertFirstInline);
 
-   }
+                if (addToDoc)
+                    startPar.Inlines.Insert(indexOfFirstInline + 1, insertFirstInline);
+            }
+        }
+        //Debug.WriteLine("\nInlines to convert=\n" + string.Join("\n", AllSelectedInlines.ConvertAll(il => il.InlineText + " :: " + il.Id)));
 
-   internal IEditable? GetStartInline(int charIndex)
-   {
-      List<Paragraph> allPars = AllParagraphs;
-      if (allPars.LastOrDefault(b => b.StartInDoc <= charIndex) is Paragraph startPar)
-      {
-         //Check if start is at end of last paragraph (cannot span from end of a paragraph)
-         if (startPar != allPars.Last() && startPar.EndInDoc == charIndex)
-         {
+
+        startPar.CallRequestInlinesUpdate();
+        endPar.CallRequestInlinesUpdate();
+
+        if (addToDoc)
+            UpdateBlockAndInlineStarts(startPar);
+
+        return (AllSelectedInlines, edgeIds);
+
+    }
+
+    internal List<IEditable> SplitRunAtPos(int charIdxInDoc, IEditable inlineToSplit, int splitPos)
+    {
+        //if (inlineToSplit.IsUIContainer)
+        //   return [new EditableRun(""), inlineToSplit];
+
+        if (GetContainingParagraph(charIdxInDoc) is not Paragraph containingPar) return [];
+        ObservableCollection<IEditable> inlines = containingPar.Inlines;
+
+        if (inlines.Count == 1 && charIdxInDoc == containingPar.StartInDoc + inlines[0].InlineLength) return [inlines[0]];
+
+        bool keepDisableUndoStack = DisableUndoStack;
+        DisableUndoStack = true;
+
+        int runIdx = inlines.IndexOf(inlineToSplit);
+
+        string part2Text = inlineToSplit.InlineText[splitPos..];
+
+        inlineToSplit.InlineText = inlineToSplit.InlineText[..splitPos];
+        IEditable insertInline = inlineToSplit.Clone();
+        insertInline.InlineText = part2Text;
+        inlines.Insert(runIdx + 1, insertInline);
+
+        DisableUndoStack = keepDisableUndoStack;
+
+        return [inlineToSplit, insertInline];
+    }
+
+    internal Paragraph? GetNextParagraph(Paragraph par)
+    {
+        List<Paragraph> allPars = AllParagraphs;
+        int myindex = allPars.IndexOf(par);
+        if (myindex == allPars.Count - 1) return null!;
+        return allPars[myindex + 1] ?? null;
+
+    }
+
+    internal Paragraph? GetPreviousParagraph(Paragraph par)
+    {
+        List<Paragraph> allPars = AllParagraphs;
+        int myindex = allPars.IndexOf(par);
+        return myindex == 0 ? null : allPars[myindex - 1];
+
+    }
+
+    internal IEditable? GetStartInline(int charIndex)
+    {
+        List<Paragraph> allPars = AllParagraphs;
+        if (allPars.LastOrDefault(b => b.StartInDoc <= charIndex) is Paragraph startPar)
+        {
+            //Check if start is at end of last paragraph (cannot span from end of a paragraph)
+            if (startPar == allPars.Last() && startPar.EndInDoc == charIndex)
+                return null;
+
+            IEditable? startInline = null;
+            bool IsAtLineBreak = false;
+            if (startPar.Inlines.LastOrDefault(ied => startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= charIndex) is IEditable startInlineReal)
+            {
+                //if (startPar.Inlines.LastOrDefault(ied => !ied.IsLineBreak && startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= charIndex) is IEditable lastInline)
+                if (startPar.Inlines.LastOrDefault(ied => startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= charIndex) is IEditable lastInline)
+                    startInline = lastInline;
+                IsAtLineBreak = startInline is EditableLineBreak;
+            }
+            return startInline;
+
+        }
+        else
             return null;
-         }
 
-         IEditable? startInline = null;
-         bool IsAtLineBreak = false;
-         if (startPar.Inlines.LastOrDefault(ied => startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= charIndex) is IEditable startInlineReal)
-         {
-            if (startPar.Inlines.LastOrDefault(ied => !ied.IsLineBreak && startPar.StartInDoc + ied.TextPositionOfInlineInParagraph <= charIndex) is IEditable lastInline)
-               startInline = lastInline;
-            IsAtLineBreak = startInline != startInlineReal;
-         }
-         return startInline;
-
-      }
-      else
-         return null;
-
-   }
-
-
-   internal IEditable? GetNextInline(IEditable inline)
-   {
-      if (AllParagraphs.FirstOrDefault(p => p.Id == inline.MyParagraphId) is not Paragraph inlinePar) return null;
-
-      IEditable? returnIED = null;
-
-      int myindex = inlinePar.Inlines.IndexOf(inline);
-     
-      if (myindex < inlinePar.Inlines.Count - 1)
-         returnIED = inlinePar.Inlines[myindex + 1];
-      else
-      {
-         if (GetNextParagraph(inlinePar) is not Paragraph nextPar) return null;
-         if (nextPar.Inlines.Count > 0)
-            returnIED = nextPar.Inlines[0];
-      }
-      return returnIED;
-   }
-
-   internal IEditable? GetPreviousInline(IEditable inline) 
-   {
-      if (AllParagraphs.FirstOrDefault(p => p.Id == inline.MyParagraphId) is not Paragraph inlinePar) return null;
-
-      IEditable? returnIED = null;
-
-      int myindex = inlinePar.Inlines.IndexOf(inline);
-
-      if (myindex > 0)
-         returnIED = inlinePar.Inlines[myindex - 1];
-      else
-      {
-         if (GetPreviousParagraph(inlinePar) is not Paragraph prevPar) return null;
-         if (prevPar.Inlines.Count > 0)
-            returnIED = prevPar.Inlines.Last();
-      }
-      return returnIED;
-   }
-
+    }
 
 }

@@ -4,250 +4,297 @@ namespace AvRichTextBox;
 public partial class FlowDocument
 {
 
-   internal void ExtendSelectionRight()
-   {
-      Selection.BiasForwardEnd = true;
+    internal void ExtendSelectionRight()
+    {
+        Selection.BiasForwardEnd = false;
+        
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeRight:
 
-      switch (SelectionExtendMode)
-      {
-         case ExtendMode.ExtendModeNone:
-         case ExtendMode.ExtendModeRight:
+                SelectionExtendMode = ExtendMode.ExtendModeRight;
 
-            SelectionExtendMode = ExtendMode.ExtendModeRight;
+                if (Selection.EndParagraph == AllParagraphs.ToList()[^1] && Selection.EndParagraph.SelectionEndInBlock == Selection.EndParagraph.TextLength)
+                    return;  // End of document
 
-            if (Selection.EndParagraph == AllParagraphs.ToList()[^1] && Selection.EndParagraph.SelectionEndInBlock == Selection.EndParagraph.TextLength)
-               return;  // End of document
+                Selection.End = GetNextPosition();
 
-            Selection.End += 1;
+                // Don't allow selection extend to stop at next paragraph start
+                if (Selection.End == Selection.EndParagraph.StartInDoc)
+                    Selection.End = GetNextPosition();
 
-            break;
+                // Don't allow selection start to be at previous paragraph end
+                if (Selection.Start == Selection.StartParagraph.EndInDoc && !Selection.StartParagraph.IsEmptyInlineOrUICPar)
+                    Selection.Start +=1;
 
-         case ExtendMode.ExtendModeLeft:
+                break;
 
-            Selection.Start += 1;
-            if (Selection.Start == Selection.End)
-               SelectionExtendMode = ExtendMode.ExtendModeRight;
+            case ExtendMode.ExtendModeLeft:
 
-            break;
-      }
+                Selection.BiasForwardStart = false;
 
-      ScrollInDirection?.Invoke(1);
+                Selection.Start = GetNextPosition();
 
-   }
+                if (Selection.Start == Selection.End)
+                    SelectionExtendMode = ExtendMode.ExtendModeRight;
 
-   internal void ExtendSelectionLeft()
-   {
-      Selection.BiasForwardEnd = false;
+                break;
+        }
 
-      switch (SelectionExtendMode)
-      {
-         case ExtendMode.ExtendModeNone:
-         case ExtendMode.ExtendModeLeft:
-            if (Selection.Start == 0) return;
-            Selection.Start -= 1;
-            SelectionExtendMode = ExtendMode.ExtendModeLeft;
-            break;
+        ScrollInDirection?.Invoke(1);
 
-         case ExtendMode.ExtendModeRight:
-            if (Selection.End == 0) return;
-            Selection.End -= 1;
-            if (Selection.Start == Selection.End)
-               SelectionExtendMode = ExtendMode.ExtendModeLeft;
-            break;
-      }
+    }
 
-      ScrollInDirection?.Invoke(-1);
-   }
+    internal void ExtendSelectionLeft()
+    {
+        Selection.BiasForwardEnd = false;
+        Selection.BiasForwardStart = true;
 
-   internal void ExtendSelectionDown()
-   {
-      Selection.BiasForwardEnd = true;
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeLeft:
+                if (Selection.Start == 0) return;
 
-      List<Paragraph> allPars = AllParagraphs;
+                Selection.Start = GetPreviousPosition();
 
-      switch (SelectionExtendMode)
-      {
+                SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                break;
 
-         case ExtendMode.ExtendModeNone:
-         case ExtendMode.ExtendModeRight:  // Hitting down key increases selection range from bottom
+            case ExtendMode.ExtendModeRight:
+                if (Selection.End == 0) return;
 
-            SelectionExtendMode = ExtendMode.ExtendModeRight;
+                Selection.End = GetPreviousPosition();
 
-            if (Selection.EndParagraph == allPars[^1] && Selection.End == Text.Length)
-               return;  // last line of document
-            
-            Paragraph origEndPar = Selection.EndParagraph;
-            
-            int nextEnd = Selection.EndParagraph.StartInDoc + Selection.EndParagraph.CharNextLineEnd;
-   
-            if (Selection.EndParagraph.IsEndAtLastLine)
-            {
-               if (Selection.EndParagraph != allPars[^1])
-               {
-                  int nextParIndex = Blocks.IndexOf(Selection.EndParagraph) + 1;
-                  Paragraph nextPar = (Paragraph)allPars[nextParIndex];
-                  Selection.End = Math.Min(nextPar.StartInDoc + nextPar.BlockLength - 1, nextEnd);
-               }
-            }
-            else
-               Selection.End = nextEnd;
+                if (Selection.Start == Selection.End)
+                    SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                break;
+        }
+
+        ScrollInDirection?.Invoke(-1);
+    }
+
+    internal void ExtendSelectionRightWord()
+    {
+        Selection.BiasForwardEnd = true;
+
+        int targetPos = GetNextWordPosition();
+
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeRight:
+                SelectionExtendMode = ExtendMode.ExtendModeRight;
+                Selection.End = targetPos;
+
+                // Don't allow selection extend to stop at next paragraph start
+                if (Selection.End == Selection.EndParagraph.StartInDoc)
+                    Selection.End -= 1;
+
+                break;
+
+            case ExtendMode.ExtendModeLeft:
+                if (targetPos >= Selection.End)
+                {
+                    Selection.Start = Selection.End;
+                    Selection.End = targetPos;
+                    SelectionExtendMode = ExtendMode.ExtendModeRight;
+                }
+                else
+                    Selection.Start = targetPos;
+                break;
+        }
+
+        ScrollInDirection?.Invoke(1);
+    }
+
+    internal void ExtendSelectionLeftWord()
+    {
+        Selection.BiasForwardEnd = false;
+
+        int targetPos = GetPreviousWordPosition();
+
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeLeft:
+                SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                Selection.Start = targetPos;
+                break;
+
+            case ExtendMode.ExtendModeRight:
+                if (targetPos <= Selection.Start)
+                {
+                    Selection.End = Selection.Start;
+                    Selection.Start = targetPos;
+                    SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                }
+                else
+                    Selection.End = targetPos;
+                break;
+        }
+
+        ScrollInDirection?.Invoke(-1);
+    }
+
+    internal void ExtendSelectionToDocStart()
+    {
+        Selection.BiasForwardStart = true;
+        Selection.BiasForwardEnd = true;
+
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeLeft:
+                SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                Selection.Start = 0;
+                break;
+
+            case ExtendMode.ExtendModeRight:
+                // Was extending right, now selecting all the way to doc start
+                // means we flip direction past the anchor
+                Selection.End = Selection.Start;
+                Selection.Start = 0;
+                SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                break;
+        }
+
+        ScrollInDirection?.Invoke(-1);
+    }
+
+    internal void ExtendSelectionToDocEnd()
+    {
+        Selection.BiasForwardStart = false;
+        Selection.BiasForwardEnd = false;
+
+        List<Paragraph> allPars = AllParagraphs;
+        int docEnd = allPars[^1].StartInDoc + allPars[^1].BlockLength - 1;
+
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeRight:
+                SelectionExtendMode = ExtendMode.ExtendModeRight;
+                Selection.End = docEnd;
+                break;
+
+            case ExtendMode.ExtendModeLeft:
+                // Was extending left, now selecting all the way to doc end
+                // means we flip direction past the anchor
+                Selection.Start = Selection.End;
+                Selection.End = docEnd;
+                SelectionExtendMode = ExtendMode.ExtendModeRight;
+                break;
+        }
+
+        ScrollInDirection?.Invoke(1);
+    }
+        
+    internal void ExtendSelectionDown()
+    {
+        Selection.BiasForwardEnd = true;
+
+        List<Paragraph> allPars = AllParagraphs;
+
+        switch (SelectionExtendMode)
+        {
+
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeRight:  // Hitting down key increases selection range from bottom
+
+                SelectionExtendMode = ExtendMode.ExtendModeRight;
+
+                Selection.End = GetNextDown();
+
+                ////hyperlink encountered (select hyperlink)
+                //if (GetStartInline(nextEnd) is EditableHyperlink hyperlink)
+                //{
+                //   if (AllParagraphs.LastOrDefault(p=> p.StartInDoc <= nextEnd) is Paragraph thisPar)
+                //      Select(thisPar.StartInDoc + hyperlink.TextPositionOfInlineInParagraph, hyperlink.InlineLength);
+                //   return;
+                //}
+
+                break;
+
+            case ExtendMode.ExtendModeLeft:  // Hitting Down key reduces selection range from top 
+
+                if (Selection.StartParagraph == allPars[^1] && Selection.StartParagraph.IsStartAtLastLine)
+                    return;  // last line of document
+
+                int newStart = GetNextDown();
+
+                if (newStart > Selection.End)
+                {
+                    int oldEnd = Selection.End;
+                    Selection.End = newStart;
+                    Selection.Start = oldEnd;
+                    SelectionExtendMode = ExtendMode.ExtendModeRight;
+                }
+                else
+                    Selection.Start = newStart;
+
+                break;
+        }
+
+        ScrollInDirection?.Invoke(1);
+
+    }
+
+    internal void ExtendSelectionUp()
+    {
+        Selection.BiasForwardEnd = false;
+
+        List<Paragraph> allPars = AllParagraphs;
+
+        switch (SelectionExtendMode)
+        {
+            case ExtendMode.ExtendModeNone:
+            case ExtendMode.ExtendModeLeft:
+
+                if (Selection.StartParagraph == allPars[0] && Selection.StartParagraph.IsStartAtFirstLine)
+                {
+                    Selection.Start = 0;
+                    return;  // first line of document
+                }
+
+                Selection.Start = GetNextUp();
+
+                ////hyperlink encountered (select hyperlink)
+                //if (GetStartInline(nextStart) is EditableHyperlink hyperlink)
+                //{
+                //   if (AllParagraphs.LastOrDefault(p => p.StartInDoc <= nextStart) is Paragraph thisPar)
+                //      Select(thisPar.StartInDoc + hyperlink.TextPositionOfInlineInParagraph, hyperlink.InlineLength);
+                //   return;
+                //}
+
+                SelectionExtendMode = ExtendMode.ExtendModeLeft;
+
+                break;
 
 
-            //for selection continuity
-            if (Selection.EndParagraph != origEndPar)
-            {
-               origEndPar.SelectionEndInBlock = origEndPar.TextLength;
-               Selection.EndParagraph.SelectionStartInBlock = 0;
-            }
+            case ExtendMode.ExtendModeRight: // Hitting up key reduces selection range from bottom 
 
-            break;
+                int newEnd = GetNextUp();
 
-         case ExtendMode.ExtendModeLeft:  // Hitting down key reduces selection range from top 
+                if (newEnd < Selection.Start)
+                {
+                    int oldStart = Selection.Start;
+                    Selection.Start = newEnd;
+                    Selection.End = oldStart;
+                    SelectionExtendMode = ExtendMode.ExtendModeLeft;
+                }
+                else
+                    Selection.End = newEnd;
 
-            if (Selection.StartParagraph == allPars[^1] && Selection.StartParagraph.IsStartAtLastLine)
-               return;  // last line of document
+                break;
+        }
 
-            int newStart = Selection.StartParagraph.StartInDoc + Selection.StartParagraph.CharNextLineStart;
-
-            if (AllParagraphs.IndexOf(Selection.StartParagraph) < AllParagraphs.Count - 1)
-            {
-               Paragraph nextPar = allPars[allPars.IndexOf(Selection.StartParagraph) + 1];
-               int charsFromStart = Selection.StartParagraph.SelectionStartInBlock - Selection.StartParagraph.FirstIndexLastLine;
-               if (Selection.StartParagraph.IsStartAtLastLine)
-               {
-                  charsFromStart = Math.Min(charsFromStart, nextPar.TextLength);
-                  newStart = nextPar.StartInDoc + charsFromStart;
-                  Selection.StartParagraph.CollapseToStart();
-               }
-            }
-
-            if (newStart > Selection.End)
-            {
-               int oldEnd = Selection.End;
-               Selection.End = newStart;
-               Selection.Start = oldEnd;
-               SelectionExtendMode = ExtendMode.ExtendModeRight;
-            }
-            else
-               Selection.Start = newStart;
-
-            break;
-      }
-
-      ScrollInDirection?.Invoke(1);
-      
-   }
-
-   internal void ExtendSelectionUp()
-   {
-      Paragraph? prevPar = null;
-      Selection.BiasForwardEnd = false;
-
-      List<Paragraph> allPars = AllParagraphs;
-
-      switch (SelectionExtendMode)
-      {
-         case ExtendMode.ExtendModeNone:
-         case ExtendMode.ExtendModeLeft:
-
-            if (Selection.StartParagraph == allPars[0] && Selection.StartParagraph.IsStartAtFirstLine)
-               return;  // first line of document
-
-            Paragraph origStartPar = Selection.StartParagraph;
-            if (Selection.StartParagraph.IsStartAtFirstLine)
-            {
-               prevPar = allPars[allPars.IndexOf(Selection.StartParagraph) - 1];
-               Selection.Start = Math.Min(prevPar.StartInDoc + prevPar.BlockLength - 2, prevPar.StartInDoc + prevPar.FirstIndexLastLine + Selection.StartParagraph.CharPrevLineStart);
-            }
-            else
-               Selection.Start = Selection.StartParagraph.StartInDoc + Selection.StartParagraph.CharPrevLineStart;
-
-            //for selection continuity
-            SelectionExtendMode = ExtendMode.ExtendModeLeft;
-            if (Selection.StartParagraph != origStartPar)
-            {
-               origStartPar.SelectionStartInBlock = 0;
-               Selection.StartParagraph.SelectionEndInBlock = Selection.StartParagraph.TextLength;
-            }
-
-            break;
+        ScrollInDirection?.Invoke(-1);
 
 
-         case ExtendMode.ExtendModeRight: // Hitting up key reduces selection range from bottom 
+    }
 
-            int newEnd = Selection.EndParagraph.StartInDoc + Selection.EndParagraph.CharPrevLineEnd;
-
-            if (AllParagraphs.IndexOf(Selection.EndParagraph) > 0)
-            {
-               prevPar = allPars[allPars.IndexOf(Selection.EndParagraph) - 1];
-               int charsFromStart = Selection.EndParagraph.SelectionEndInBlock;
-               if (Selection.EndParagraph.IsEndAtFirstLine)
-               {
-                  charsFromStart = Math.Min(charsFromStart, prevPar.TextLength);
-                  newEnd = prevPar.StartInDoc + prevPar.FirstIndexLastLine + charsFromStart;
-                  Selection.EndParagraph.CollapseToStart();
-               }
-                  
-            }
-
-            if (newEnd < Selection.Start)
-            {
-               int oldStart = Selection.Start;
-               Selection.Start = newEnd;
-               Selection.End = oldStart;
-               SelectionExtendMode = ExtendMode.ExtendModeLeft;
-            }
-            else
-               Selection.End = newEnd;
-
-            break;
-      }
-
-      ScrollInDirection?.Invoke(-1);
-      
-
-   }
-
-   internal void EnsureSelectionContinuity()
-   {
-
-      List<Paragraph> allPars = AllParagraphs;
-
-      foreach (Paragraph p in allPars.Where(p => !SelectionParagraphs.Contains(p)))
-          p.ClearSelection(); 
-
-      if (SelectionParagraphs.Count > 1)
-      {
-         for (int i = 0; i < SelectionParagraphs.Count; i++)
-         {
-            Paragraph selPar = SelectionParagraphs[i];
-            switch (i)
-            {
-               case 0:
-                  //ensure first par selected to end
-                  selPar.SelectionEndInBlock = selPar.BlockLength;
-                  break;
-
-               case int last when last == SelectionParagraphs.Count - 1:
-                  //ensure last par selected from start
-                  selPar.SelectionStartInBlock = 0;
-                  break;
-
-               default:
-                  selPar.SelectionStartInBlock = 0;
-                  selPar.SelectionEndInBlock = selPar.BlockLength;
-                  break;
-            }
-         }
-      }
-
-      foreach (Paragraph p in SelectionParagraphs)
-      {
-         if (p.IsTableCellBlock)
-            p.OwningCell.Selected = (p.SelectionStartInBlock == 0 && p.SelectionEndInBlock == p.BlockLength);
-      }
-
-   }
 
 }
 
