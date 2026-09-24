@@ -83,6 +83,8 @@ Fixed multiple paragraphs in Cells not reading in for XamlPackage/Html</PackageR
     <PackageReference Include="HtmlAgilityPack" />
     <PackageReference Include="RtfDomParser" />
     <PackageReference Include="ReactiveUI" />
+    <PackageReference Include="System.Reactive" />
+    <PackageReference Include="DynamicData" />
   </ItemGroup>
 
   <!-- iPlus settings and overrides -->

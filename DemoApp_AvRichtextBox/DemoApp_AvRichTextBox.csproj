@@ -66,6 +66,7 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="ReactiveUI" />
+    <PackageReference Include="System.Reactive" />
   </ItemGroup>
 
   <!-- iPlus settings and overrides -->
